@@ -1,0 +1,21 @@
+{
+  "name": "smarthome-dashboard-card",
+  "version": "1.0.0",
+  "description": "A beautiful smart home dashboard card for Home Assistant",
+  "main": "dist/smarthome-dashboard-card.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lit": "^3.1.0"
+  },
+  "devDependencies": {
+    "vite": "^5.1.0",
+    "rollup-plugin-visualizer": "^5.12.0"
+  },
+  "keywords": ["home-assistant", "lovelace", "custom-card", "smarthome"],
+  "license": "MIT"
+}
