@@ -1,6 +1,14 @@
-var We = Object.defineProperty;
-var Ge = (o, e, t) => e in o ? We(o, e, { enumerable: !0, configurable: !0, writable: !0, value: t }) : o[e] = t;
-var f = (o, e, t) => Ge(o, typeof e != "symbol" ? e + "" : e, t);
+/**
+ * SmartHome Dashboard
+ * Author: robman2026
+ * GitHub: https://github.com/robman2026/ultimate-home-dashboard
+ * Version: 1.0.2
+ * License: MIT
+ */
+
+var Be = Object.defineProperty;
+var We = (o, e, t) => e in o ? Be(o, e, { enumerable: !0, configurable: !0, writable: !0, value: t }) : o[e] = t;
+var f = (o, e, t) => We(o, typeof e != "symbol" ? e + "" : e, t);
 /**
  * @license
  * Copyright 2019 Google LLC
@@ -25,14 +33,14 @@ let Me = class {
     return this.cssText;
   }
 };
-const Ve = (o) => new Me(typeof o == "string" ? o : o + "", void 0, ge), k = (o, ...e) => {
+const Ge = (o) => new Me(typeof o == "string" ? o : o + "", void 0, ge), k = (o, ...e) => {
   const t = o.length === 1 ? o[0] : e.reduce((i, s, a) => i + ((r) => {
     if (r._$cssResult$ === !0) return r.cssText;
     if (typeof r == "number") return r;
     throw Error("Value passed to 'css' function must be a 'css' function result: " + r + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
   })(s) + o[a + 1], o[0]);
   return new Me(t, o, ge);
-}, Je = (o, e) => {
+}, Ve = (o, e) => {
   if (pe) o.adoptedStyleSheets = e.map((t) => t instanceof CSSStyleSheet ? t : t.styleSheet);
   else for (const t of e) {
     const i = document.createElement("style"), s = G.litNonce;
@@ -41,17 +49,17 @@ const Ve = (o) => new Me(typeof o == "string" ? o : o + "", void 0, ge), k = (o,
 }, we = pe ? (o) => o : (o) => o instanceof CSSStyleSheet ? ((e) => {
   let t = "";
   for (const i of e.cssRules) t += i.cssText;
-  return Ve(t);
+  return Ge(t);
 })(o) : o;
 /**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const { is: qe, defineProperty: Ke, getOwnPropertyDescriptor: Ye, getOwnPropertyNames: Ze, getOwnPropertySymbols: Qe, getPrototypeOf: Xe } = Object, C = globalThis, ke = C.trustedTypes, et = ke ? ke.emptyScript : "", oe = C.reactiveElementPolyfillSupport, P = (o, e) => o, ce = { toAttribute(o, e) {
+const { is: Je, defineProperty: qe, getOwnPropertyDescriptor: Ke, getOwnPropertyNames: Ye, getOwnPropertySymbols: Ze, getPrototypeOf: Qe } = Object, C = globalThis, ke = C.trustedTypes, Xe = ke ? ke.emptyScript : "", oe = C.reactiveElementPolyfillSupport, P = (o, e) => o, ce = { toAttribute(o, e) {
   switch (e) {
     case Boolean:
-      o = o ? et : null;
+      o = o ? Xe : null;
       break;
     case Object:
     case Array:
@@ -76,7 +84,7 @@ const { is: qe, defineProperty: Ke, getOwnPropertyDescriptor: Ye, getOwnProperty
       }
   }
   return t;
-} }, Ne = (o, e) => !qe(o, e), Se = { attribute: !0, type: String, converter: ce, reflect: !1, useDefault: !1, hasChanged: Ne };
+} }, Ne = (o, e) => !Je(o, e), Se = { attribute: !0, type: String, converter: ce, reflect: !1, useDefault: !1, hasChanged: Ne };
 Symbol.metadata ?? (Symbol.metadata = Symbol("metadata")), C.litPropertyMetadata ?? (C.litPropertyMetadata = /* @__PURE__ */ new WeakMap());
 let L = class extends HTMLElement {
   static addInitializer(e) {
@@ -88,11 +96,11 @@ let L = class extends HTMLElement {
   static createProperty(e, t = Se) {
     if (t.state && (t.attribute = !1), this._$Ei(), this.prototype.hasOwnProperty(e) && ((t = Object.create(t)).wrapped = !0), this.elementProperties.set(e, t), !t.noAccessor) {
       const i = Symbol(), s = this.getPropertyDescriptor(e, i, t);
-      s !== void 0 && Ke(this.prototype, e, s);
+      s !== void 0 && qe(this.prototype, e, s);
     }
   }
   static getPropertyDescriptor(e, t, i) {
-    const { get: s, set: a } = Ye(this.prototype, e) ?? { get() {
+    const { get: s, set: a } = Ke(this.prototype, e) ?? { get() {
       return this[t];
     }, set(r) {
       this[t] = r;
@@ -107,13 +115,13 @@ let L = class extends HTMLElement {
   }
   static _$Ei() {
     if (this.hasOwnProperty(P("elementProperties"))) return;
-    const e = Xe(this);
+    const e = Qe(this);
     e.finalize(), e.l !== void 0 && (this.l = [...e.l]), this.elementProperties = new Map(e.elementProperties);
   }
   static finalize() {
     if (this.hasOwnProperty(P("finalized"))) return;
     if (this.finalized = !0, this._$Ei(), this.hasOwnProperty(P("properties"))) {
-      const t = this.properties, i = [...Ze(t), ...Qe(t)];
+      const t = this.properties, i = [...Ye(t), ...Ze(t)];
       for (const s of i) this.createProperty(s, t[s]);
     }
     const e = this[Symbol.metadata];
@@ -162,7 +170,7 @@ let L = class extends HTMLElement {
   }
   createRenderRoot() {
     const e = this.shadowRoot ?? this.attachShadow(this.constructor.shadowRootOptions);
-    return Je(e, this.constructor.elementStyles), e;
+    return Ve(e, this.constructor.elementStyles), e;
   }
   connectedCallback() {
     var e;
@@ -287,14 +295,14 @@ L.elementStyles = [], L.shadowRootOptions = { mode: "open" }, L[P("elementProper
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const H = globalThis, Ae = (o) => o, J = H.trustedTypes, Ce = J ? J.createPolicy("lit-html", { createHTML: (o) => o }) : void 0, De = "$lit$", A = `lit$${Math.random().toFixed(9).slice(2)}$`, Pe = "?" + A, tt = `<${Pe}>`, O = document, U = () => O.createComment(""), j = (o) => o === null || typeof o != "object" && typeof o != "function", me = Array.isArray, it = (o) => me(o) || typeof (o == null ? void 0 : o[Symbol.iterator]) == "function", ae = `[ 	
+const H = globalThis, Ae = (o) => o, J = H.trustedTypes, Ce = J ? J.createPolicy("lit-html", { createHTML: (o) => o }) : void 0, De = "$lit$", A = `lit$${Math.random().toFixed(9).slice(2)}$`, Pe = "?" + A, et = `<${Pe}>`, O = document, U = () => O.createComment(""), j = (o) => o === null || typeof o != "object" && typeof o != "function", me = Array.isArray, tt = (o) => me(o) || typeof (o == null ? void 0 : o[Symbol.iterator]) == "function", ae = `[ 	
 \f\r]`, D = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g, Ee = /-->/g, ze = />/g, E = RegExp(`>|${ae}(?:([^\\s"'>=/]+)(${ae}*=${ae}*(?:[^ 	
-\f\r"'\`<>=]|("|')|))|$)`, "g"), Re = /'/g, Oe = /"/g, He = /^(?:script|style|textarea|title)$/i, st = (o) => (e, ...t) => ({ _$litType$: o, strings: e, values: t }), l = st(1), M = Symbol.for("lit-noChange"), y = Symbol.for("lit-nothing"), Te = /* @__PURE__ */ new WeakMap(), z = O.createTreeWalker(O, 129);
+\f\r"'\`<>=]|("|')|))|$)`, "g"), Re = /'/g, Oe = /"/g, He = /^(?:script|style|textarea|title)$/i, it = (o) => (e, ...t) => ({ _$litType$: o, strings: e, values: t }), l = it(1), M = Symbol.for("lit-noChange"), y = Symbol.for("lit-nothing"), Te = /* @__PURE__ */ new WeakMap(), z = O.createTreeWalker(O, 129);
 function Ue(o, e) {
   if (!me(o) || !o.hasOwnProperty("raw")) throw Error("invalid template strings array");
   return Ce !== void 0 ? Ce.createHTML(e) : e;
 }
-const ot = (o, e) => {
+const st = (o, e) => {
   const t = o.length - 1, i = [];
   let s, a = e === 2 ? "<svg>" : e === 3 ? "<math>" : "", r = D;
   for (let d = 0; d < t; d++) {
@@ -302,7 +310,7 @@ const ot = (o, e) => {
     let p, m, g = -1, x = 0;
     for (; x < c.length && (r.lastIndex = x, m = r.exec(c), m !== null); ) x = r.lastIndex, r === D ? m[1] === "!--" ? r = Ee : m[1] !== void 0 ? r = ze : m[2] !== void 0 ? (He.test(m[2]) && (s = RegExp("</" + m[2], "g")), r = E) : m[3] !== void 0 && (r = E) : r === E ? m[0] === ">" ? (r = s ?? D, g = -1) : m[1] === void 0 ? g = -2 : (g = r.lastIndex - m[2].length, p = m[1], r = m[3] === void 0 ? E : m[3] === '"' ? Oe : Re) : r === Oe || r === Re ? r = E : r === Ee || r === ze ? r = D : (r = E, s = void 0);
     const b = r === E && o[d + 1].startsWith("/>") ? " " : "";
-    a += r === D ? c + tt : g >= 0 ? (i.push(p), c.slice(0, g) + De + c.slice(g) + A + b) : c + A + (g === -2 ? d : b);
+    a += r === D ? c + et : g >= 0 ? (i.push(p), c.slice(0, g) + De + c.slice(g) + A + b) : c + A + (g === -2 ? d : b);
   }
   return [Ue(o, a + (o[t] || "<?>") + (e === 2 ? "</svg>" : e === 3 ? "</math>" : "")), i];
 };
@@ -311,7 +319,7 @@ class I {
     let s;
     this.parts = [];
     let a = 0, r = 0;
-    const d = e.length - 1, c = this.parts, [p, m] = ot(e, t);
+    const d = e.length - 1, c = this.parts, [p, m] = st(e, t);
     if (this.el = I.createElement(p, i), z.currentNode = this.el.content, t === 2 || t === 3) {
       const g = this.el.content.firstChild;
       g.replaceWith(...g.childNodes);
@@ -320,7 +328,7 @@ class I {
       if (s.nodeType === 1) {
         if (s.hasAttributes()) for (const g of s.getAttributeNames()) if (g.endsWith(De)) {
           const x = m[r++], b = s.getAttribute(g).split(A), v = /([.?@])?(.*)/.exec(x);
-          c.push({ type: 1, index: a, name: v[2], strings: b, ctor: v[1] === "." ? rt : v[1] === "?" ? nt : v[1] === "@" ? lt : se }), s.removeAttribute(g);
+          c.push({ type: 1, index: a, name: v[2], strings: b, ctor: v[1] === "." ? at : v[1] === "?" ? rt : v[1] === "@" ? nt : se }), s.removeAttribute(g);
         } else g.startsWith(A) && (c.push({ type: 6, index: a }), s.removeAttribute(g));
         if (He.test(s.tagName)) {
           const g = s.textContent.split(A), x = g.length - 1;
@@ -350,7 +358,7 @@ function N(o, e, t = o, i) {
   const a = j(e) ? void 0 : e._$litDirective$;
   return (s == null ? void 0 : s.constructor) !== a && ((d = s == null ? void 0 : s._$AO) == null || d.call(s, !1), a === void 0 ? s = void 0 : (s = new a(o), s._$AT(o, t, i)), i !== void 0 ? (t._$Co ?? (t._$Co = []))[i] = s : t._$Cl = s), s !== void 0 && (e = N(o, s._$AS(o, e.values), s, i)), e;
 }
-class at {
+class ot {
   constructor(e, t) {
     this._$AV = [], this._$AN = void 0, this._$AD = e, this._$AM = t;
   }
@@ -367,7 +375,7 @@ class at {
     for (; c !== void 0; ) {
       if (r === c.index) {
         let p;
-        c.type === 2 ? p = new B(a, a.nextSibling, this, e) : c.type === 1 ? p = new c.ctor(a, c.name, c.strings, this, e) : c.type === 6 && (p = new ct(a, this, e)), this._$AV.push(p), c = i[++d];
+        c.type === 2 ? p = new B(a, a.nextSibling, this, e) : c.type === 1 ? p = new c.ctor(a, c.name, c.strings, this, e) : c.type === 6 && (p = new lt(a, this, e)), this._$AV.push(p), c = i[++d];
       }
       r !== (c == null ? void 0 : c.index) && (a = z.nextNode(), r++);
     }
@@ -398,7 +406,7 @@ class B {
     return this._$AB;
   }
   _$AI(e, t = this) {
-    e = N(this, e, t), j(e) ? e === y || e == null || e === "" ? (this._$AH !== y && this._$AR(), this._$AH = y) : e !== this._$AH && e !== M && this._(e) : e._$litType$ !== void 0 ? this.$(e) : e.nodeType !== void 0 ? this.T(e) : it(e) ? this.k(e) : this._(e);
+    e = N(this, e, t), j(e) ? e === y || e == null || e === "" ? (this._$AH !== y && this._$AR(), this._$AH = y) : e !== this._$AH && e !== M && this._(e) : e._$litType$ !== void 0 ? this.$(e) : e.nodeType !== void 0 ? this.T(e) : tt(e) ? this.k(e) : this._(e);
   }
   O(e) {
     return this._$AA.parentNode.insertBefore(e, this._$AB);
@@ -414,7 +422,7 @@ class B {
     const { values: t, _$litType$: i } = e, s = typeof i == "number" ? this._$AC(e) : (i.el === void 0 && (i.el = I.createElement(Ue(i.h, i.h[0]), this.options)), i);
     if (((a = this._$AH) == null ? void 0 : a._$AD) === s) this._$AH.p(t);
     else {
-      const r = new at(s, this), d = r.u(this.options);
+      const r = new ot(s, this), d = r.u(this.options);
       r.p(t), this.T(d), this._$AH = r;
     }
   }
@@ -466,7 +474,7 @@ class se {
     e === y ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, e ?? "");
   }
 }
-class rt extends se {
+class at extends se {
   constructor() {
     super(...arguments), this.type = 3;
   }
@@ -474,7 +482,7 @@ class rt extends se {
     this.element[this.name] = e === y ? void 0 : e;
   }
 }
-class nt extends se {
+class rt extends se {
   constructor() {
     super(...arguments), this.type = 4;
   }
@@ -482,7 +490,7 @@ class nt extends se {
     this.element.toggleAttribute(this.name, !!e && e !== y);
   }
 }
-class lt extends se {
+class nt extends se {
   constructor(e, t, i, s, a) {
     super(e, t, i, s, a), this.type = 5;
   }
@@ -496,7 +504,7 @@ class lt extends se {
     typeof this._$AH == "function" ? this._$AH.call(((t = this.options) == null ? void 0 : t.host) ?? this.element, e) : this._$AH.handleEvent(e);
   }
 }
-class ct {
+class lt {
   constructor(e, t, i) {
     this.element = e, this.type = 6, this._$AN = void 0, this._$AM = t, this.options = i;
   }
@@ -509,7 +517,7 @@ class ct {
 }
 const re = H.litHtmlPolyfillSupport;
 re == null || re(I, B), (H.litHtmlVersions ?? (H.litHtmlVersions = [])).push("3.3.3");
-const dt = (o, e, t) => {
+const ct = (o, e, t) => {
   const i = (t == null ? void 0 : t.renderBefore) ?? e;
   let s = i._$litPart$;
   if (s === void 0) {
@@ -535,7 +543,7 @@ class $ extends L {
   }
   update(e) {
     const t = this.render();
-    this.hasUpdated || (this.renderOptions.isConnected = this.isConnected), super.update(e), this._$Do = dt(t, this.renderRoot, this.renderOptions);
+    this.hasUpdated || (this.renderOptions.isConnected = this.isConnected), super.update(e), this._$Do = ct(t, this.renderRoot, this.renderOptions);
   }
   connectedCallback() {
     var e;
@@ -554,18 +562,16 @@ $._$litElement$ = !0, $.finalized = !0, (Le = R.litElementHydrateSupport) == nul
 const ne = R.litElementPolyfillSupport;
 ne == null || ne({ LitElement: $ });
 (R.litElementVersions ?? (R.litElementVersions = [])).push("4.2.2");
-const je = `
+const T = k`
   :host {
-    --sd-bg-deep:       #0b0f1e;
-    --sd-bg-card:       rgba(18, 26, 52, 0.85);
-    --sd-bg-section:    rgba(255,255,255,0.04);
-    --sd-border:        rgba(255,255,255,0.10);
-    --sd-border-glow:   rgba(255,255,255,0.20);
-
-    --sd-text-primary:  #eef0f8;
-    --sd-text-secondary:rgba(200,210,240,0.55);
-    --sd-text-muted:    rgba(180,195,230,0.30);
-
+    --sd-bg-deep:        #0b0f1e;
+    --sd-bg-card:        rgba(18,26,52,0.85);
+    --sd-bg-section:     rgba(255,255,255,0.04);
+    --sd-border:         rgba(255,255,255,0.10);
+    --sd-border-glow:    rgba(255,255,255,0.20);
+    --sd-text-primary:   #eef0f8;
+    --sd-text-secondary: rgba(200,210,240,0.55);
+    --sd-text-muted:     rgba(180,195,230,0.30);
     --sd-gold:    #f59e0b;
     --sd-green:   #10b981;
     --sd-blue:    #3b82f6;
@@ -573,16 +579,13 @@ const je = `
     --sd-red:     #ef4444;
     --sd-purple:  #8b5cf6;
     --sd-orange:  #f97316;
-
-    --sd-radius:  18px;
+    --sd-radius:    18px;
     --sd-radius-sm: 12px;
-    --sd-blur:    blur(20px);
-    --sd-font:    'Outfit', system-ui, sans-serif;
-    --sd-mono:    'JetBrains Mono', monospace;
+    --sd-blur:      blur(20px);
+    --sd-font:      'Outfit', system-ui, sans-serif;
+    --sd-mono:      'JetBrains Mono', monospace;
     --sd-transition: 0.2s ease;
   }
-`, T = `
-  ${je}
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -606,8 +609,7 @@ const je = `
   .card::before {
     content: '';
     position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 1px;
+    top: 0; left: 0; right: 0; height: 1px;
     background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
   }
   .card:hover { border-color: var(--sd-border-glow); }
@@ -619,17 +621,10 @@ const je = `
     margin-bottom: 8px;
     display: flex; align-items: center; gap: 6px;
   }
-  .label .dot {
-    width: 7px; height: 7px; border-radius: 50%;
-  }
+  .label .dot { width: 7px; height: 7px; border-radius: 50%; }
 
-  .value-big {
-    font-size: 32px; font-weight: 200;
-    color: var(--sd-text-primary); line-height: 1;
-  }
-  .value-sub {
-    font-size: 11px; color: var(--sd-text-secondary); margin-top: 2px;
-  }
+  .value-big { font-size: 32px; font-weight: 200; color: var(--sd-text-primary); line-height: 1; }
+  .value-sub  { font-size: 11px; color: var(--sd-text-secondary); margin-top: 2px; }
 
   .badge {
     display: inline-flex; align-items: center; gap: 4px;
@@ -663,7 +658,7 @@ const je = `
 }, _ = (o, e, t) => {
   var i, s;
   return (s = (i = w(o, e)) == null ? void 0 : i.attributes) == null ? void 0 : s[t];
-}, V = (o, e, t, i) => o.callService(e, t, i), ht = (o) => o != null ? `${parseFloat(o).toFixed(1)}°` : "—", pt = (o) => o != null ? `${Math.round(o)}%` : "—";
+}, V = (o, e, t, i) => o.callService(e, t, i), dt = (o) => o != null ? `${parseFloat(o).toFixed(1)}°` : "—", ht = (o) => o != null ? `${Math.round(o)}%` : "—";
 class K extends $ {
   constructor() {
     super(), this._weatherTab = 0, this._tick();
@@ -802,9 +797,7 @@ f(K, "properties", {
   _time: { state: !0 },
   _date: { state: !0 },
   _weatherTab: { state: !0 }
-}), f(K, "styles", k`
-    ${T}
-
+}), f(K, "styles", [T, k`
     /* CLOCK */
     .clock-card {
       background: linear-gradient(135deg, rgba(30,50,100,0.85), rgba(20,30,70,0.85));
@@ -861,7 +854,7 @@ f(K, "properties", {
     .pager-dot { height: 3px; border-radius: 2px; background: rgba(255,255,255,0.2); transition: all .2s; }
     .pager-dot.active { width: 18px; background: #fff; }
     .pager-dot:not(.active) { width: 6px; }
-  `);
+  `]);
 customElements.define("clock-weather-card", K);
 class Y extends $ {
   setConfig(e) {
@@ -907,9 +900,7 @@ class Y extends $ {
 f(Y, "properties", {
   hass: { attribute: !1 },
   config: { attribute: !1 }
-}), f(Y, "styles", k`
-    ${T}
-    .members { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+}), f(Y, "styles", [T, k`    .members { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
     .member { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
     .avatar {
       width: 46px; height: 46px; border-radius: 50%;
@@ -933,7 +924,7 @@ f(Y, "properties", {
     .member-status { font-size: 8px; text-align: center; }
     .member-status.home { color: var(--sd-green); }
     .member-status.away { color: var(--sd-text-muted); }
-  `);
+  `]);
 customElements.define("members-card", Y);
 class Z extends $ {
   setConfig(e) {
@@ -978,8 +969,8 @@ class Z extends $ {
 
         ${p != null ? l`
           <div class="temp-row">
-            <span class="temp">${ht(p)}</span>
-            ${m != null ? l`<span class="hum">💧 ${pt(m)}</span>` : ""}
+            <span class="temp">${dt(p)}</span>
+            ${m != null ? l`<span class="hum">💧 ${ht(m)}</span>` : ""}
           </div>
         ` : l`<div class="no-data">— / —</div>`}
 
@@ -1052,9 +1043,7 @@ f(Z, "properties", {
   hass: { attribute: !1 },
   config: { attribute: !1 },
   _expanded: { state: !0 }
-}), f(Z, "styles", k`
-    ${T}
-
+}), f(Z, "styles", [T, k`
     .room-card {
       cursor: pointer;
       transition: all 0.2s;
@@ -1105,7 +1094,7 @@ f(Z, "properties", {
     .icon-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
     .icon-btn.active { background: rgba(245,158,11,0.25); color: #f59e0b;
       border-color: rgba(245,158,11,0.4); }
-  `);
+  `]);
 customElements.define("room-card", Z);
 class Q extends $ {
   constructor() {
@@ -1255,9 +1244,7 @@ f(Q, "properties", {
   _animOffset: { state: !0 },
   _animFrame: { state: !0 },
   _localOffset: { state: !0 }
-}), f(Q, "styles", k`
-    ${T}
-
+}), f(Q, "styles", [T, k`
     .garage-wrap { display: flex; flex-direction: column; gap: 12px; }
 
     .garage-header {
@@ -1302,7 +1289,7 @@ f(Q, "properties", {
     .status-val.open   { color: #f59e0b; }
     .status-val.closed { color: #10b981; }
     .status-val.moving { color: #f97316; }
-  `);
+  `]);
 customElements.define("garage-card", Q);
 class X extends $ {
   setConfig(e) {
@@ -1388,9 +1375,7 @@ class X extends $ {
 f(X, "properties", {
   hass: { attribute: !1 },
   config: { attribute: !1 }
-}), f(X, "styles", k`
-    ${T}
-
+}), f(X, "styles", [T, k`
     .energy-wrap { display: flex; flex-direction: column; gap: 10px; }
 
     .main-power {
@@ -1440,7 +1425,7 @@ f(X, "properties", {
     .device-icon { font-size: 14px; }
     .device-name { font-size: 11px; color: var(--sd-text-secondary); flex: 1; }
     .device-val { font-size: 12px; font-weight: 700; color: var(--sd-gold); }
-  `);
+  `]);
 customElements.define("energy-card", X);
 class ee extends $ {
   constructor() {
@@ -1566,9 +1551,7 @@ f(ee, "properties", {
   hass: { attribute: !1 },
   config: { attribute: !1 },
   _activeTab: { state: !0 }
-}), f(ee, "styles", k`
-    ${T}
-
+}), f(ee, "styles", [T, k`
     .media-tabs {
       display: flex; gap: 2px; margin-bottom: 12px;
       background: rgba(255,255,255,0.05);
@@ -1654,7 +1637,7 @@ f(ee, "properties", {
     }
     .placeholder-icon { font-size: 36px; opacity: 0.25; margin-bottom: 8px; }
     .placeholder-text { font-size: 12px; color: var(--sd-text-muted); }
-  `);
+  `]);
 customElements.define("media-card", ee);
 class te extends $ {
   setConfig(e) {
@@ -1730,9 +1713,7 @@ class te extends $ {
 f(te, "properties", {
   hass: { attribute: !1 },
   config: { attribute: !1 }
-}), f(te, "styles", k`
-    ${T}
-    .sensors-grid {
+}), f(te, "styles", [T, k`    .sensors-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
       gap: 8px;
@@ -1761,7 +1742,7 @@ f(te, "properties", {
     .bin-name { font-size:11px;color:rgba(255,255,255,0.7);flex:1; }
     .bin-state{ font-size:11px;font-weight:700; }
     .binaries-list { display:flex;flex-direction:column;gap:5px; }
-  `);
+  `]);
 customElements.define("sensor-overview-card", te);
 class ie extends $ {
   constructor() {
@@ -1802,31 +1783,16 @@ class ie extends $ {
           <!-- LEFT COLUMN -->
           <div class="col">
             ${i ? l`
-              <clock-weather-card
-                .hass=${this.hass}
-                .config=${i}>
-              </clock-weather-card>
+              <clock-weather-card .hass=${this.hass} .config=${i}></clock-weather-card>
             ` : ""}
-
             ${t ? l`
-              <members-card
-                .hass=${this.hass}
-                .config=${t}>
-              </members-card>
+              <members-card .hass=${this.hass} .config=${t}></members-card>
             ` : ""}
-
             ${d.garage ? l`
-              <garage-card
-                .hass=${this.hass}
-                .config=${d.garage}>
-              </garage-card>
+              <garage-card .hass=${this.hass} .config=${d.garage}></garage-card>
             ` : ""}
-
             ${r ? l`
-              <sensor-overview-card
-                .hass=${this.hass}
-                .config=${r}>
-              </sensor-overview-card>
+              <sensor-overview-card .hass=${this.hass} .config=${r}></sensor-overview-card>
             ` : ""}
           </div>
 
@@ -1834,29 +1800,18 @@ class ie extends $ {
           <div class="col">
             <div class="rooms-grid">
               ${c.map((p) => l`
-                <room-card
-                  .hass=${this.hass}
-                  .config=${p}>
-                </room-card>
+                <room-card .hass=${this.hass} .config=${p}></room-card>
               `)}
             </div>
-
             ${a ? l`
-              <energy-card
-                .hass=${this.hass}
-                .config=${a}>
-              </energy-card>
+              <energy-card .hass=${this.hass} .config=${a}></energy-card>
             ` : ""}
           </div>
 
           <!-- RIGHT COLUMN -->
           <div class="col">
             ${s ? l`
-              <media-card
-                .hass=${this.hass}
-                .config=${s}
-                style="flex:1;">
-              </media-card>
+              <media-card .hass=${this.hass} .config=${s} style="flex:1;"></media-card>
             ` : ""}
           </div>
 
@@ -1890,33 +1845,27 @@ class ie extends $ {
         sun_entity: "sun.sun"
       },
       members: {
-        members: [
-          { name: "Patrik", person_entity: "person.patrik" }
-        ]
+        members: [{ name: "Patrik", person_entity: "person.patrik" }]
       },
-      floors: [
-        {
-          name: "Floor 1",
-          icon: "🏠",
-          rooms: [
-            {
-              name: "Living Room",
-              icon: "🛋️",
-              temp_sensor: "sensor.temp_hum_livingroom_temperature",
-              hum_sensor: "sensor.temp_hum_livingroom_humidity",
-              lights: ["light.baldachin_leds"],
-              presence_sensor: "binary_sensor.presence_kitchen",
-              door_sensor: "binary_sensor.geam_sufragerie_dreapta_contact",
-              motion_sensor: "binary_sensor.motion_hol_etaj_occupancy"
-            }
-          ],
-          garage: {
-            name: "Garage Door",
-            cover_entity: "cover.smart_garage",
-            door_sensor: "binary_sensor.garage_door_garage_door_contact"
-          }
+      floors: [{
+        name: "Floor 1",
+        icon: "🏠",
+        rooms: [{
+          name: "Living Room",
+          icon: "🛋️",
+          temp_sensor: "sensor.temp_hum_livingroom_temperature",
+          hum_sensor: "sensor.temp_hum_livingroom_humidity",
+          lights: ["light.baldachin_leds"],
+          presence_sensor: "binary_sensor.presence_kitchen",
+          door_sensor: "binary_sensor.geam_sufragerie_dreapta_contact",
+          motion_sensor: "binary_sensor.motion_hol_etaj_occupancy"
+        }],
+        garage: {
+          name: "Garage Door",
+          cover_entity: "cover.smart_garage",
+          door_sensor: "binary_sensor.garage_door_garage_door_contact"
         }
-      ],
+      }],
       energy: {
         power_entity: "sensor.em_home_power",
         today_entity: "sensor.em_home_energy_today",
@@ -1935,7 +1884,27 @@ f(ie, "properties", {
   config: { attribute: !1 },
   _activeFloor: { state: !0 }
 }), f(ie, "styles", k`
-    ${je}
+    :host {
+      --sd-bg-deep:        #0b0f1e;
+      --sd-bg-card:        rgba(18,26,52,0.85);
+      --sd-border:         rgba(255,255,255,0.10);
+      --sd-border-glow:    rgba(255,255,255,0.20);
+      --sd-text-primary:   #eef0f8;
+      --sd-text-secondary: rgba(200,210,240,0.55);
+      --sd-text-muted:     rgba(180,195,230,0.30);
+      --sd-gold:    #f59e0b;
+      --sd-green:   #10b981;
+      --sd-blue:    #3b82f6;
+      --sd-cyan:    #06b6d4;
+      --sd-red:     #ef4444;
+      --sd-purple:  #8b5cf6;
+      --sd-radius:    18px;
+      --sd-radius-sm: 12px;
+      --sd-blur:      blur(20px);
+      --sd-font:      'Outfit', system-ui, sans-serif;
+      --sd-mono:      'JetBrains Mono', monospace;
+      --sd-transition: 0.2s ease;
+    }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2217,8 +2186,8 @@ class de extends $ {
                     </span>
                     <ha-icon-button
                       .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
-                      @click=${(Be) => {
-        Be.stopPropagation(), this._removeRoom(h);
+                      @click=${(Ie) => {
+        Ie.stopPropagation(), this._removeRoom(h);
       }}>
                     </ha-icon-button>
                   </div>
@@ -2759,7 +2728,7 @@ f(he, "properties", {
   `);
 customElements.define("room-card-editor", he);
 window.customCards = window.customCards ?? [];
-const Ie = [
+const je = [
   { type: "smarthome-dashboard-card", cls: ie, name: "Smart Home Dashboard", description: "Full smart home dashboard — rooms, energy, media, sensors, garage", preview: !0 },
   { type: "room-card", cls: Z, name: "Room Card", description: "Per-room climate, lights, presence, door and motion sensors", preview: !0 },
   { type: "clock-weather-card", cls: K, name: "Clock & Weather Card", description: "Live clock, weather and forecast", preview: !0 },
@@ -2769,10 +2738,10 @@ const Ie = [
   { type: "media-card", cls: ee, name: "Media Card", description: "Spotify, TV, cameras and doorbell in one panel", preview: !0 },
   { type: "sensor-overview-card", cls: te, name: "Sensor Overview Card", description: "Flexible numeric and binary sensor display", preview: !0 }
 ];
-Ie.forEach(({ type: o, name: e, description: t, preview: i }) => {
+je.forEach(({ type: o, name: e, description: t, preview: i }) => {
   window.customCards.find((s) => s.type === o) || window.customCards.push({ type: o, name: e, description: t, preview: i });
 });
 console.groupCollapsed("%c🏠 Smart Home Dashboard Card", "color:#f59e0b;font-weight:bold;font-size:14px;");
 console.log("Version: 1.0.0");
-console.log("Cards:", Ie.map((o) => o.type).join(", "));
+console.log("Cards:", je.map((o) => o.type).join(", "));
 console.groupEnd();
