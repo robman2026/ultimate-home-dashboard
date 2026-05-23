@@ -1,7 +1,7 @@
 {
   "name": "Smart Home Dashboard Card",
   "description": "A beautiful multi-room smart home dashboard for Home Assistant with energy, climate, sensors, media and more.",
-  "documentation": "https://github.com/YOUR_USERNAME/smarthome-dashboard-card/wiki",
+  "documentation": "https://github.com/robman2026/smarthome-dashboard-card/wiki",
   "content_in_root": false,
   "zip_release": true,
   "filename": "smarthome-dashboard-card.js",

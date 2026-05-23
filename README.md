@@ -13,7 +13,7 @@ A beautiful, responsive custom Lovelace dashboard card for Home Assistant, built
 ## Installation via HACS
 
 1. Open HACS → Frontend → ⋮ → Custom repositories
-2. Add: `https://github.com/YOUR_USERNAME/smarthome-dashboard-card`
+2. Add: `https://github.com/robman2026/smarthome-dashboard-card`
 3. Category: **Lovelace**
 4. Install **Smart Home Dashboard Card**
 5. Add to resources (auto-done by HACS)

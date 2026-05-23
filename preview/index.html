@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Home Dashboard — HA Card Preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Base ── */
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  font-family:'Outfit',system-ui,sans-serif;
+  background:#0b0f1e;
+  color:#eef0f8;
+  min-height:100vh;
+}
+
+/* ── Ambient background ── */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(ellipse 60% 80% at 85% 50%,rgba(200,110,20,0.35) 0%,transparent 60%),
+    radial-gradient(ellipse 40% 50% at 10% 20%,rgba(30,50,120,0.28) 0%,transparent 60%);
+}
+
+/* ── Top Bar ── */
+.topbar{
+  position:sticky;top:0;z-index:100;
+  display:flex;align-items:center;gap:10px;
+  padding:0 20px;height:48px;
+  background:rgba(10,14,28,0.85);
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  backdrop-filter:blur(20px);
+}
+.topbar-brand{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;margin-right:16px;}
+.topbar-brand span{font-size:18px;}
+.floor-tab{
+  padding:4px 14px;border-radius:20px;cursor:pointer;
+  font-size:11px;font-weight:600;color:rgba(200,210,240,0.5);
+  border:1px solid transparent;transition:all .2s;user-select:none;
+}
+.floor-tab.active{background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.18);}
+.floor-tab:hover:not(.active){color:rgba(255,255,255,0.75);}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.connected-chip{
+  display:flex;align-items:center;gap:5px;padding:3px 10px;
+  border-radius:12px;background:rgba(16,185,129,0.15);
+  border:1px solid rgba(16,185,129,0.3);
+  font-size:10px;font-weight:700;color:#10b981;
+}
+.connected-dot{width:6px;height:6px;border-radius:50%;background:#10b981;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+.topbar-time{font-size:11px;color:rgba(180,195,230,0.35);font-family:'JetBrains Mono',monospace;}
+
+/* ── Editor Tab Bar ── */
+.editor-tabs{
+  display:flex;gap:0;
+  background:rgba(10,14,28,0.6);
+  border-bottom:1px solid rgba(255,255,255,0.06);
+  padding:0 20px;
+}
+.etab{
+  padding:10px 18px;font-size:12px;font-weight:600;
+  color:rgba(200,210,240,0.45);cursor:pointer;
+  border-bottom:2px solid transparent;transition:all .2s;
+}
+.etab.active{color:#f59e0b;border-bottom-color:#f59e0b;}
+.etab:hover:not(.active){color:rgba(200,210,240,0.8);}
+
+/* ── Main content ── */
+.page{position:relative;z-index:1;}
+.view{display:none;}
+.view.active{display:block;}
+
+/* ── DASHBOARD VIEW ── */
+.dashboard{
+  display:grid;
+  grid-template-columns:300px 1fr 340px;
+  gap:12px;padding:12px;
+  min-height:calc(100vh - 96px);
+}
+
+/* ── EDITOR VIEW ── */
+.editor-view{
+  display:grid;
+  grid-template-columns:1fr 380px;
+  gap:0;
+  min-height:calc(100vh - 96px);
+}
+.editor-canvas{
+  padding:16px;
+  background:rgba(0,0,0,0.3);
+  border-right:1px solid rgba(255,255,255,0.06);
+}
+.editor-panel{
+  background:rgba(15,20,38,0.95);
+  display:flex;flex-direction:column;
+}
+.editor-panel-header{
+  padding:14px 16px;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+  font-size:13px;font-weight:700;color:#fff;
+  display:flex;align-items:center;gap:8px;
+}
+.editor-panel-body{padding:0;overflow-y:auto;flex:1;}
+.editor-section{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05);}
+.editor-section-title{
+  font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.09em;color:rgba(200,210,240,0.4);
+  margin-bottom:10px;padding-bottom:6px;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+}
+/* HA-style form fields */
+.ha-field{
+  position:relative;margin-bottom:10px;
+}
+.ha-field label{
+  display:block;font-size:10px;font-weight:600;
+  color:rgba(200,210,240,0.5);text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:5px;
+}
+.ha-input,.ha-select{
+  width:100%;padding:10px 12px;
+  background:rgba(255,255,255,0.07);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:8px;color:#fff;font-size:13px;
+  font-family:'Outfit',sans-serif;
+  outline:none;transition:border-color .2s;
+  appearance:none;
+}
+.ha-input:focus,.ha-select:focus{border-color:rgba(59,130,246,0.7);}
+.ha-select option{background:#1a2040;color:#fff;}
+.ha-entity-picker{
+  position:relative;
+}
+.ha-entity-picker::after{
+  content:'';position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  width:10px;height:10px;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='rgba(200,210,240,0.4)'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.ha-row{display:flex;gap:8px;}
+.ha-row > *{flex:1;}
+.ha-row > *:last-child:not(:first-child){flex:0 0 80px;}
+
+.add-entity-btn{
+  width:100%;padding:8px;border-radius:8px;
+  background:rgba(59,130,246,0.1);
+  border:1px dashed rgba(59,130,246,0.3);
+  color:#60a5fa;font-size:12px;font-weight:600;
+  cursor:pointer;transition:all .2s;
+  font-family:'Outfit',sans-serif;
+}
+.add-entity-btn:hover{background:rgba(59,130,246,0.2);}
+
+.entity-chip{
+  display:flex;align-items:center;gap:6px;
+  padding:6px 8px;border-radius:8px;
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.08);
+  margin-bottom:5px;
+}
+.entity-chip-icon{font-size:14px;}
+.entity-chip-name{font-size:11px;color:rgba(255,255,255,0.7);flex:1;}
+.entity-chip-state{font-size:10px;font-weight:700;color:#10b981;}
+.entity-chip-remove{
+  font-size:14px;color:rgba(255,255,255,0.25);
+  cursor:pointer;padding:2px;
+}
+.entity-chip-remove:hover{color:#ef4444;}
+
+.save-btn{
+  margin:12px 16px;padding:11px;
+  border-radius:10px;border:none;
+  background:linear-gradient(135deg,#2563eb,#3b82f6);
+  color:#fff;font-size:13px;font-weight:700;
+  cursor:pointer;font-family:'Outfit',sans-serif;
+  transition:all .2s;
+}
+.save-btn:hover{filter:brightness(1.1);}
+.cancel-btn{
+  margin:0 16px 12px;padding:9px;
+  border-radius:10px;border:1px solid rgba(255,255,255,0.1);
+  background:transparent;color:rgba(255,255,255,0.5);
+  font-size:12px;font-weight:600;cursor:pointer;
+  font-family:'Outfit',sans-serif;
+}
+
+/* ── Glass card base ── */
+.card{
+  background:rgba(18,26,52,0.85);
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:18px;
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  padding:16px;position:relative;overflow:hidden;
+  transition:border-color .2s;
+}
+.card:hover{border-color:rgba(255,255,255,0.2);}
+.card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent);
+}
+.card-label{
+  display:flex;align-items:center;gap:6px;
+  font-size:10px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:rgba(200,210,240,0.5);
+  margin-bottom:10px;
+}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;}
+
+/* ── Left column ── */
+.col{display:flex;flex-direction:column;gap:10px;}
+
+/* ── Clock ── */
+.clock-card{
+  background:linear-gradient(135deg,rgba(30,50,100,0.85),rgba(20,30,70,0.85));
+  border-color:rgba(96,165,250,0.2);
+}
+.clock-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  background:rgba(255,255,255,0.08);border-radius:12px;
+  padding:3px 10px;font-size:10px;font-weight:700;
+  color:rgba(255,255,255,0.5);margin-bottom:8px;
+}
+.clock-time{font-size:56px;font-weight:200;line-height:1;color:#fff;letter-spacing:-3px;font-family:'JetBrains Mono',monospace;}
+.clock-date{font-size:11px;color:rgba(200,210,240,0.45);margin:5px 0 14px;}
+.sun-row{display:flex;gap:8px;}
+.sun-chip{flex:1;background:rgba(255,255,255,0.06);border-radius:12px;padding:8px 10px;display:flex;align-items:center;gap:8px;}
+.sun-val{font-size:15px;font-weight:600;color:#fff;}
+.sun-lbl{font-size:9px;color:rgba(180,195,230,0.35);text-transform:uppercase;}
+
+/* ── Weather ── */
+.weather-temp{font-size:44px;font-weight:200;color:#fff;line-height:1;}
+.weather-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;}
+.wstat{background:rgba(255,255,255,0.05);border-radius:10px;padding:7px;text-align:center;}
+.wv{font-size:13px;font-weight:600;color:#fff;}
+.wl{font-size:9px;color:rgba(180,195,230,0.35);text-transform:uppercase;margin-top:1px;}
+
+/* ── Members ── */
+.members-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;}
+.member{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.avatar{
+  width:46px;height:46px;border-radius:50%;
+  background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.12);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;color:#fff;
+  position:relative;transition:all .2s;cursor:pointer;
+}
+.avatar::after{content:'';position:absolute;bottom:0;right:0;width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.2);border:2px solid rgba(10,14,28,0.8);}
+.avatar.home{border-color:#10b981;background:rgba(16,185,129,0.15);color:#10b981;}
+.avatar.home::after{background:#10b981;}
+.avatar:hover{transform:scale(1.08);}
+.member-name{font-size:9px;color:rgba(200,210,240,0.45);}
+.member-status{font-size:8px;color:rgba(180,195,230,0.3);}
+
+/* ── Gate/Garage Widget ── */
+.gate-status-row{
+  display:flex;align-items:center;gap:12px;
+  background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.22);
+  border-radius:14px;padding:12px 14px;cursor:pointer;
+  transition:all .2s;margin-bottom:8px;
+}
+.gate-status-row:hover{background:rgba(16,185,129,0.14);}
+.gate-icon-box{width:42px;height:42px;border-radius:12px;background:rgba(16,185,129,0.2);display:flex;align-items:center;justify-content:center;font-size:22px;}
+.gate-state{font-size:22px;font-weight:700;color:#10b981;line-height:1;}
+.gate-time{font-size:11px;color:rgba(180,195,230,0.35);}
+
+/* ── Rooms grid ── */
+.rooms-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.room-card{
+  background:rgba(22,30,58,0.82);
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:16px;padding:12px 10px;
+  cursor:pointer;transition:all .2s;
+  display:flex;flex-direction:column;gap:3px;
+}
+.room-card:hover{border-color:rgba(255,255,255,0.2);transform:translateY(-2px);}
+.room-card.active{
+  background:linear-gradient(135deg,rgba(245,158,11,0.2),rgba(245,158,11,0.08));
+  border-color:rgba(245,158,11,0.6);
+  box-shadow:0 0 20px rgba(245,158,11,0.18);
+}
+.room-icon{font-size:22px;margin-bottom:4px;}
+.room-name{font-size:12px;font-weight:700;color:#fff;line-height:1.2;}
+.lights-on{font-size:9px;color:#fcd34d;font-weight:700;text-shadow:0 0 8px rgba(252,211,77,0.6);}
+.room-temp{font-size:24px;font-weight:300;color:#fff;line-height:1;}
+.room-hum{font-size:10px;color:#60a5fa;font-weight:600;}
+.room-dash{font-size:11px;color:rgba(180,195,230,0.3);}
+.room-btns{display:flex;gap:4px;margin-top:auto;padding-top:6px;}
+.rbtn{
+  width:26px;height:26px;border-radius:8px;
+  border:1px solid rgba(255,255,255,0.1);
+  background:rgba(255,255,255,0.06);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;transition:all .15s;font-size:12px;
+}
+.rbtn:hover{background:rgba(255,255,255,0.15);}
+.rbtn.active{background:rgba(245,158,11,0.25);border-color:rgba(245,158,11,0.4);}
+
+/* Sensor dots on room cards */
+.sensor-dots{display:flex;gap:4px;margin-top:5px;}
+.sdot{
+  display:flex;align-items:center;gap:2px;
+  padding:2px 5px;border-radius:5px;
+  background:rgba(255,255,255,0.05);
+  font-size:9px;
+}
+.sdot-pip{width:5px;height:5px;border-radius:50%;}
+
+/* ── Media panel ── */
+.media-tabs{display:flex;gap:2px;margin-bottom:10px;background:rgba(255,255,255,0.05);border-radius:10px;padding:3px;}
+.mtab{flex:1;padding:5px 2px;font-size:9px;font-weight:700;text-align:center;color:rgba(180,195,230,0.4);border-radius:8px;cursor:pointer;transition:all .2s;text-transform:uppercase;letter-spacing:.04em;}
+.mtab.active{background:rgba(255,255,255,0.12);color:#fff;}
+.album-art{width:100%;aspect-ratio:1;border-radius:14px;overflow:hidden;background:#0d1021;margin-bottom:10px;position:relative;}
+.album-canvas{width:100%;height:100%;display:block;}
+.track-name{font-size:15px;font-weight:700;color:#fff;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.track-artist{font-size:11px;color:rgba(200,210,240,0.5);margin-bottom:8px;}
+.prog-bar{height:3px;background:rgba(255,255,255,0.1);border-radius:2px;margin-bottom:4px;cursor:pointer;}
+.prog-fill{height:100%;border-radius:2px;background:#10b981;transition:width .5s linear;}
+.prog-times{display:flex;justify-content:space-between;font-size:9px;color:rgba(180,195,230,0.35);margin-bottom:10px;font-family:'JetBrains Mono',monospace;}
+.player-ctrls{display:flex;align-items:center;justify-content:space-around;}
+.pc-btn{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.07);border:none;cursor:pointer;color:rgba(255,255,255,0.5);display:flex;align-items:center;justify-content:center;transition:all .15s;font-size:14px;}
+.pc-btn:hover{background:rgba(255,255,255,0.15);color:#fff;}
+.pc-btn.play{width:44px;height:44px;background:#10b981;color:#000;font-size:18px;}
+.pc-btn.play:hover{background:#059669;}
+
+/* ── Energy section ── */
+.energy-main{display:flex;align-items:flex-end;gap:6px;margin-bottom:10px;}
+.energy-val{font-size:40px;font-weight:200;color:#fff;line-height:1;}
+.energy-unit{font-size:16px;color:rgba(200,210,240,0.5);margin-bottom:4px;}
+.bar-chart{display:flex;align-items:flex-end;gap:3px;height:46px;}
+.bar{flex:1;border-radius:3px 3px 0 0;background:rgba(245,158,11,0.35);min-height:3px;}
+.bar.cur{background:rgba(245,158,11,0.7);box-shadow:0 0 8px rgba(245,158,11,0.4);}
+.bar-labels{display:flex;justify-content:space-between;font-size:8px;color:rgba(180,195,230,0.3);margin-top:3px;}
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;}
+.stat{background:rgba(255,255,255,0.05);border-radius:10px;padding:8px;text-align:center;}
+.stat-val{font-size:14px;font-weight:600;color:#fff;}
+.stat-lbl{font-size:8px;color:rgba(180,195,230,0.3);text-transform:uppercase;margin-top:2px;}
+
+/* ── Bottom nav ── */
+.bottom-nav{
+  display:flex;align-items:center;justify-content:center;padding:8px;
+  background:rgba(10,14,28,0.7);border-top:1px solid rgba(255,255,255,0.07);
+  backdrop-filter:blur(20px);position:sticky;bottom:0;z-index:50;
+}
+.nav-pill{display:flex;gap:4px;background:rgba(18,26,52,0.9);border:1px solid rgba(255,255,255,0.09);border-radius:30px;padding:6px 12px;}
+.nav-btn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;font-size:16px;color:rgba(180,195,230,0.35);}
+.nav-btn:hover{color:rgba(255,255,255,0.8);}
+.nav-btn.active{background:rgba(245,158,11,0.2);color:#f59e0b;}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ TOP BAR ══════════════════ -->
+<div class="topbar">
+  <div class="topbar-brand"><span>🏠</span> Smart Home</div>
+  <div class="floor-tab" onclick="switchFloor(this,'garden')">🌿 Garden</div>
+  <div class="floor-tab" onclick="switchFloor(this,'basement')">🏚 Basement</div>
+  <div class="floor-tab active" onclick="switchFloor(this,'floor1')">🏠 Floor 1</div>
+  <div class="floor-tab" onclick="switchFloor(this,'ground')">🏢 Ground</div>
+  <div class="floor-tab" onclick="switchFloor(this,'attic')">🔝 Attic</div>
+  <div class="topbar-right">
+    <div class="connected-chip"><div class="connected-dot"></div> Connected</div>
+    <div class="topbar-time" id="topbar-time">--:--</div>
+  </div>
+</div>
+
+<!-- ══════════════════ VIEW TABS ══════════════════ -->
+<div class="editor-tabs">
+  <div class="etab active" onclick="showView('dashboard',this)">📊 Dashboard Preview</div>
+  <div class="etab" onclick="showView('editor',this)">⚙️ Visual Editor</div>
+  <div class="etab" onclick="showView('yaml',this)">📄 YAML Config</div>
+</div>
+
+<div class="page">
+
+<!-- ══════════════════ DASHBOARD VIEW ══════════════════ -->
+<div class="view active" id="view-dashboard">
+<div class="dashboard">
+
+  <!-- ── LEFT COLUMN ── -->
+  <div class="col">
+
+    <!-- CLOCK -->
+    <div class="card clock-card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span style="font-size:14px;">🏠</span>
+        <span style="font-size:11px;color:rgba(200,210,240,0.55);font-weight:600;" id="floor-label">House — Floor 1</span>
+        <span style="margin-left:auto;" class="clock-badge"><span style="color:#60a5fa;">● NOC</span></span>
+      </div>
+      <div class="clock-time" id="clock">--:--</div>
+      <div class="clock-date" id="clock-date">Loading...</div>
+      <div class="sun-row">
+        <div class="sun-chip">
+          <span style="font-size:18px;">☀️</span>
+          <div><div class="sun-lbl">Sunrise</div><div class="sun-val">04:55</div></div>
+        </div>
+        <div class="sun-chip">
+          <span style="font-size:18px;">🌅</span>
+          <div><div class="sun-lbl">Sunset</div><div class="sun-val">20:30</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WEATHER -->
+    <div class="card" onclick="cycleWeather()" style="cursor:pointer;">
+      <div id="wpanel-0">
+        <div style="font-size:9px;color:rgba(180,195,230,0.35);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">🌙 Clear Night</div>
+        <div style="display:flex;align-items:flex-start;gap:12px;">
+          <span style="font-size:42px;">🌙</span>
+          <div><div class="weather-temp">13°</div><div style="font-size:11px;color:rgba(200,210,240,0.5);">Clear night · feels like 11°</div></div>
+        </div>
+        <div class="weather-stats">
+          <div class="wstat"><div class="wv">1020.7</div><div class="wl">hPa</div></div>
+          <div class="wstat"><div class="wv">74%</div><div class="wl">Humidity</div></div>
+          <div class="wstat"><div class="wv">4 m/s</div><div class="wl">Wind</div></div>
+        </div>
+        <div style="display:flex;gap:3px;justify-content:center;margin-top:8px;">
+          <div style="width:18px;height:3px;border-radius:2px;background:#fff;"></div>
+          <div style="width:6px;height:3px;border-radius:2px;background:rgba(255,255,255,0.2);"></div>
+          <div style="width:6px;height:3px;border-radius:2px;background:rgba(255,255,255,0.2);"></div>
+        </div>
+      </div>
+      <div id="wpanel-1" style="display:none;">
+        <div style="font-size:9px;color:rgba(180,195,230,0.35);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">📅 Forecast · 5 days</div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <div style="flex:1;font-weight:600;color:rgba(255,255,255,0.7);">Today</div><span style="font-size:16px;">⛅</span><div style="color:#3b82f6;font-size:10px;min-width:50px;text-align:center;">💧 0.1mm</div><div style="font-weight:700;font-size:11px;">11° / 22°</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <div style="flex:1;font-weight:600;color:rgba(255,255,255,0.7);">Thu</div><span style="font-size:16px;">⛅</span><div style="color:#3b82f6;font-size:10px;min-width:50px;text-align:center;">💧 0.2mm</div><div style="font-weight:700;font-size:11px;">12° / 21°</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;">
+          <div style="flex:1;font-weight:600;color:rgba(255,255,255,0.7);">Fri</div><span style="font-size:16px;">☀️</span><div style="color:#3b82f6;font-size:10px;min-width:50px;text-align:center;">—</div><div style="font-weight:700;font-size:11px;">11° / 21°</div>
+        </div>
+        <div style="display:flex;gap:3px;justify-content:center;margin-top:8px;">
+          <div style="width:6px;height:3px;border-radius:2px;background:rgba(255,255,255,0.2);"></div>
+          <div style="width:18px;height:3px;border-radius:2px;background:#fff;"></div>
+          <div style="width:6px;height:3px;border-radius:2px;background:rgba(255,255,255,0.2);"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HOUSEHOLD MEMBERS -->
+    <div class="card">
+      <div class="card-label"><div class="dot" style="background:#3b82f6;"></div>Household Members</div>
+      <div class="members-row">
+        <div class="member"><div class="avatar home">ND</div><div class="member-name">Our Home</div><div class="member-status" style="color:#10b981;">Home</div></div>
+        <div class="member"><div class="avatar home">P</div><div class="member-name">Patrik</div><div class="member-status" style="color:#10b981;">Home</div></div>
+        <div class="member"><div class="avatar">A</div><div class="member-name">Anna</div><div class="member-status">Away</div></div>
+        <div class="member"><div class="avatar">T</div><div class="member-name">Tom</div><div class="member-status">Away</div></div>
+      </div>
+    </div>
+
+    <!-- GARAGE DOOR -->
+    <div class="card">
+      <div class="card-label"><div class="dot" style="background:#f59e0b;"></div>🏠 Garage Door</div>
+      <div class="gate-status-row" onclick="showView('editor',document.querySelectorAll('.etab')[1])">
+        <div class="gate-icon-box">🔒</div>
+        <div>
+          <div style="font-size:9px;color:rgba(180,195,230,0.35);margin-bottom:2px;">COVER STATUS</div>
+          <div class="gate-state">Closed</div>
+          <div class="gate-time" id="gate-time-display">4 minutes ago</div>
+        </div>
+        <div style="margin-left:auto;color:rgba(180,195,230,0.25);">›</div>
+      </div>
+      <div style="font-size:10px;color:rgba(180,195,230,0.3);display:flex;align-items:center;gap:5px;cursor:pointer;">
+        <span>☞</span> Click to control garage
+      </div>
+    </div>
+
+    <!-- SALT LEVEL (your ultrasonic sensor) -->
+    <div class="card">
+      <div class="card-label"><div class="dot" style="background:#8b5cf6;"></div>🧂 Salt Level</div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <svg width="80" height="80" viewBox="0 0 80 80">
+          <circle cx="40" cy="40" r="32" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.07)" stroke-width="2"/>
+          <clipPath id="sc"><circle cx="40" cy="40" r="32"/></clipPath>
+          <rect x="8" y="50" width="64" height="22" fill="rgba(139,92,246,0.3)" clip-path="url(#sc)"/>
+          <circle cx="40" cy="40" r="32" fill="none" stroke="rgba(139,92,246,0.4)" stroke-width="2.5"/>
+          <text x="40" y="37" text-anchor="middle" fill="white" font-size="16" font-weight="300" font-family="Outfit,sans-serif">73%</text>
+          <text x="40" y="50" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-size="8" font-family="Outfit,sans-serif">level</text>
+        </svg>
+        <div style="flex:1;">
+          <div style="font-size:9px;color:rgba(180,195,230,0.35);text-transform:uppercase;margin-bottom:6px;">sensor.salt_level</div>
+          <div style="display:flex;gap:6px;">
+            <div class="wstat" style="flex:1;background:rgba(16,185,129,0.1);border-radius:8px;">
+              <div class="wv" style="color:#10b981;">OK</div><div class="wl">Status</div>
+            </div>
+            <div class="wstat" style="flex:1;border-radius:8px;">
+              <div class="wv">~18d</div><div class="wl">Refill</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── CENTER COLUMN ── -->
+  <div class="col">
+
+    <!-- ROOMS GRID -->
+    <div class="rooms-grid" id="rooms-grid"></div>
+
+    <!-- ENERGY MONITORING -->
+    <div class="card">
+      <div class="card-label"><div class="dot" style="background:#f59e0b;"></div>⚡ Power Consumption · EM Home</div>
+      <div class="energy-main">
+        <span class="energy-val">2.4</span>
+        <span class="energy-unit">kW</span>
+      </div>
+      <div class="bar-chart">
+        <div class="bar" style="height:45%"></div>
+        <div class="bar" style="height:70%"></div>
+        <div class="bar" style="height:55%"></div>
+        <div class="bar" style="height:80%"></div>
+        <div class="bar" style="height:60%"></div>
+        <div class="bar cur" style="height:100%"></div>
+      </div>
+      <div class="bar-labels"><span>-5h</span><span>-4h</span><span>-3h</span><span>-2h</span><span>-1h</span><span>now</span></div>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-val">18.3<span style="font-size:9px;color:rgba(180,195,230,0.3)">kWh</span></div><div class="stat-lbl">Today</div></div>
+        <div class="stat"><div class="stat-val">312<span style="font-size:9px;color:rgba(180,195,230,0.3)">kWh</span></div><div class="stat-lbl">Month</div></div>
+        <div class="stat"><div class="stat-val" style="color:#f59e0b;">0.77<span style="font-size:9px;color:rgba(180,195,230,0.3)">€/h</span></div><div class="stat-lbl">Est.</div></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:10px;">
+        <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:8px;padding:7px;display:flex;align-items:center;gap:6px;">
+          <span style="font-size:14px;">🫧</span>
+          <div style="flex:1;font-size:11px;color:rgba(200,210,240,0.6);">Laundry</div>
+          <div style="font-size:12px;font-weight:700;color:#f59e0b;">0.8 kW</div>
+        </div>
+        <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:8px;padding:7px;display:flex;align-items:center;gap:6px;">
+          <span style="font-size:14px;">🔌</span>
+          <div style="flex:1;font-size:11px;color:rgba(200,210,240,0.6);">Ground</div>
+          <div style="font-size:12px;font-weight:700;color:#f59e0b;">1.2 kW</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT COLUMN ── -->
+  <div class="col">
+    <div class="card" style="flex:1;">
+      <div class="media-tabs">
+        <div class="mtab active" id="rtab-spotify" onclick="switchRightTab('spotify')">🎵 Spotify</div>
+        <div class="mtab" id="rtab-tv" onclick="switchRightTab('tv')">📺 TV</div>
+        <div class="mtab" id="rtab-cam" onclick="switchRightTab('cam')">📷 Cam</div>
+        <div class="mtab" id="rtab-bell" onclick="switchRightTab('bell')">🔔 Bell</div>
+      </div>
+      <div id="rpanel-spotify">
+        <div class="album-art"><canvas class="album-canvas" id="albumCanvas" width="300" height="300"></canvas></div>
+        <div class="track-name">Meadows</div>
+        <div class="track-artist">Edlan, Djah · media_player.spotify</div>
+        <div class="prog-bar"><div class="prog-fill" id="prog-fill" style="width:28%"></div></div>
+        <div class="prog-times"><span id="prog-time">1:13</span><span>4:42</span></div>
+        <div class="player-ctrls">
+          <button class="pc-btn">🔀</button>
+          <button class="pc-btn" onclick="prevTrack()">⏮</button>
+          <button class="pc-btn play" id="play-btn" onclick="togglePlay()">⏸</button>
+          <button class="pc-btn" onclick="nextTrack()">⏭</button>
+          <button class="pc-btn">🔁</button>
+        </div>
+        <div style="margin-top:10px;">
+          <div style="font-size:9px;color:rgba(180,195,230,0.35);margin-bottom:4px;">🔊 Volume</div>
+          <input type="range" min="0" max="100" value="70" style="width:100%;accent-color:#10b981;">
+        </div>
+      </div>
+      <div id="rpanel-tv" style="display:none;text-align:center;padding:20px 0;">
+        <div style="font-size:40px;opacity:0.3;margin-bottom:10px;">📺</div>
+        <div style="font-size:13px;color:rgba(200,210,240,0.5);">media_player.odin</div>
+        <div style="font-size:11px;color:rgba(180,195,230,0.3);margin-top:4px;">Samsung TV — Off</div>
+      </div>
+      <div id="rpanel-cam" style="display:none;">
+        <div style="background:rgba(0,0,0,0.4);border-radius:10px;height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;margin-bottom:8px;">
+          <span style="font-size:32px;opacity:0.3;">📷</span>
+          <div style="font-size:11px;color:rgba(180,195,230,0.4);">Frigate / Reolink cameras</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <div style="background:rgba(0,0,0,0.3);border-radius:8px;height:60px;display:flex;align-items:center;justify-content:center;opacity:0.4;">📷</div>
+          <div style="background:rgba(0,0,0,0.3);border-radius:8px;height:60px;display:flex;align-items:center;justify-content:center;opacity:0.4;">📷</div>
+        </div>
+      </div>
+      <div id="rpanel-bell" style="display:none;text-align:center;padding:16px 0;">
+        <div style="width:60px;height:60px;border-radius:50%;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 10px;">🔔</div>
+        <div style="font-size:12px;color:rgba(200,210,240,0.5);">Doorbell · Ring history</div>
+      </div>
+    </div>
+
+    <!-- AUTOMOWER -->
+    <div class="card">
+      <div class="card-label"><div class="dot" style="background:#10b981;"></div>🌿 Husqvarna Automower</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="font-size:36px;">🤖</div>
+        <div style="flex:1;">
+          <div style="font-size:16px;font-weight:600;color:#10b981;margin-bottom:2px;">Mowing</div>
+          <div style="font-size:10px;color:rgba(180,195,230,0.35);">lawn_mower.husqvarna_automower</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+            <div style="flex:1;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;">
+              <div style="width:65%;height:100%;background:#10b981;border-radius:2px;"></div>
+            </div>
+            <span style="font-size:10px;color:#10b981;font-weight:700;">65%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div><!-- /dashboard -->
+
+<!-- BOTTOM NAV -->
+<div class="bottom-nav">
+  <div class="nav-pill">
+    <div class="nav-btn">🌿</div>
+    <div class="nav-btn">🏚</div>
+    <div class="nav-btn active">🏠</div>
+    <div class="nav-btn">🏢</div>
+    <div class="nav-btn">🔝</div>
+  </div>
+</div>
+</div><!-- /view-dashboard -->
+
+<!-- ══════════════════ EDITOR VIEW ══════════════════ -->
+<div class="view" id="view-editor">
+<div class="editor-view">
+
+  <!-- Left: Card preview in editor context -->
+  <div class="editor-canvas">
+    <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+      <div style="font-size:11px;color:rgba(200,210,240,0.4);font-weight:600;text-transform:uppercase;letter-spacing:.08em;">Editing card:</div>
+      <select class="ha-select" onchange="switchEditorCard(this.value)" style="max-width:200px;padding:4px 8px;">
+        <option value="room">Room Card — Living Room</option>
+        <option value="energy">Energy Card</option>
+        <option value="garage">Garage Door Card</option>
+        <option value="sensor">Sensor Overview</option>
+      </select>
+    </div>
+
+    <!-- Preview of room card being edited -->
+    <div id="editor-preview-room" style="max-width:280px;">
+      <div class="card room-card active">
+        <div class="room-icon">🛋️</div>
+        <div class="room-name" id="ep-name">Living Room</div>
+        <div class="lights-on">💡 1 light on</div>
+        <div class="room-temp" id="ep-temp">22.1°</div>
+        <div class="room-hum" id="ep-hum">💧 57%</div>
+        <div class="sensor-dots">
+          <div class="sdot"><div class="sdot-pip" style="background:#10b981;box-shadow:0 0 5px rgba(16,185,129,0.8)"></div>🧍</div>
+          <div class="sdot"><div class="sdot-pip" style="background:#3b82f6;box-shadow:0 0 5px rgba(59,130,246,0.5)"></div>🚪</div>
+          <div class="sdot"><div class="sdot-pip" style="background:rgba(255,255,255,0.15)"></div>👁</div>
+        </div>
+        <div class="room-btns">
+          <div class="rbtn active">💡</div>
+          <div class="rbtn">🌡</div>
+          <div class="rbtn">ℹ</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="editor-preview-energy" style="display:none;max-width:340px;">
+      <div class="card"><div class="card-label"><div class="dot" style="background:#f59e0b;"></div>⚡ Energy Card Preview</div><div style="color:rgba(200,210,240,0.5);font-size:12px;">Configure the energy entities on the right →</div></div>
+    </div>
+    <div id="editor-preview-garage" style="display:none;max-width:340px;">
+      <div class="card"><div class="card-label"><div class="dot" style="background:#f59e0b;"></div>🏠 Garage Door Card Preview</div><div style="color:rgba(200,210,240,0.5);font-size:12px;">Live preview reflects entity changes →</div></div>
+    </div>
+    <div id="editor-preview-sensor" style="display:none;max-width:340px;">
+      <div class="card"><div class="card-label"><div class="dot" style="background:#06b6d4;"></div>📡 Sensor Overview Preview</div><div style="color:rgba(200,210,240,0.5);font-size:12px;">Add sensors from the panel →</div></div>
+    </div>
+
+    <div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);">
+      <div style="font-size:10px;font-weight:700;color:#f59e0b;margin-bottom:4px;">📝 Generated YAML</div>
+      <pre id="yaml-preview" style="font-size:10px;color:rgba(200,210,240,0.6);font-family:'JetBrains Mono',monospace;white-space:pre-wrap;line-height:1.5;">type: custom:room-card
+name: Living Room
+icon: 🛋️
+temp_sensor: sensor.temp_hum_livingroom_temperature
+hum_sensor: sensor.temp_hum_livingroom_humidity
+lights:
+  - light.baldachin_leds
+presence_sensor: binary_sensor.presence_kitchen
+door_sensor: binary_sensor.usa_intrare_contact
+motion_sensor: binary_sensor.motion_hol_etaj_occupancy</pre>
+    </div>
+  </div>
+
+  <!-- Right: Editor panel -->
+  <div class="editor-panel">
+    <div class="editor-panel-header">
+      ⚙️ Visual Card Editor
+      <span style="margin-left:auto;font-size:10px;font-weight:400;color:rgba(200,210,240,0.4);">HA native pickers</span>
+    </div>
+
+    <div class="editor-panel-body">
+
+      <!-- BASIC INFO -->
+      <div class="editor-section">
+        <div class="editor-section-title">Basic Info</div>
+        <div class="ha-row">
+          <div class="ha-field">
+            <label>Room name</label>
+            <input class="ha-input" value="Living Room" oninput="document.getElementById('ep-name').textContent=this.value;updateYaml()">
+          </div>
+          <div class="ha-field">
+            <label>Icon</label>
+            <input class="ha-input" value="🛋️" style="text-align:center;font-size:18px;">
+          </div>
+        </div>
+      </div>
+
+      <!-- CLIMATE SENSORS -->
+      <div class="editor-section">
+        <div class="editor-section-title">🌡 Climate Sensors</div>
+        <div class="ha-field ha-entity-picker">
+          <label>Temperature sensor</label>
+          <select class="ha-select" onchange="updateYaml()">
+            <option>sensor.temp_hum_livingroom_temperature</option>
+            <option>sensor.temp_hum_kitchen_temperature</option>
+            <option>sensor.temp_hum_dormitor_temperature</option>
+            <option>sensor.temp_hum_baie_temperature</option>
+            <option>sensor.temp_hum_garaj_temperature</option>
+            <option>sensor.temp_hum_mansarda_temperature</option>
+            <option>sensor.temp_hum_birou_temperature</option>
+          </select>
+        </div>
+        <div class="ha-field ha-entity-picker">
+          <label>Humidity sensor</label>
+          <select class="ha-select" onchange="updateYaml()">
+            <option>sensor.temp_hum_livingroom_humidity</option>
+            <option>sensor.temp_hum_kitchen_humidity</option>
+            <option>sensor.temp_hum_dormitor_humidity</option>
+            <option>sensor.temp_hum_baie_humidity</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- LIGHTS -->
+      <div class="editor-section">
+        <div class="editor-section-title">💡 Lights</div>
+        <div id="lights-list">
+          <div class="entity-chip">
+            <span class="entity-chip-icon">💡</span>
+            <span class="entity-chip-name">light.baldachin_leds</span>
+            <span class="entity-chip-state">on</span>
+            <span class="entity-chip-remove" onclick="this.parentElement.remove();updateYaml()">✕</span>
+          </div>
+        </div>
+        <div class="ha-field ha-entity-picker" style="margin-top:8px;">
+          <label>Add light / switch</label>
+          <select class="ha-select" onchange="addLight(this)">
+            <option value="">— Select entity —</option>
+            <option>light.baldachin_leds</option>
+            <option>light.lumina_dulap_dreapta</option>
+            <option>light.lumina_dulap_plita</option>
+            <option>light.leds_garderoba</option>
+            <option>light.tv_leds</option>
+            <option>switch.zbminil2_hol_sus</option>
+            <option>switch.zbminil2_hol_jos</option>
+            <option>switch.zbminil2_scara_beci</option>
+            <option>switch.zbminil2_hobbyroom</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- SENSORS -->
+      <div class="editor-section">
+        <div class="editor-section-title">📡 Presence & Security</div>
+        <div class="ha-field ha-entity-picker">
+          <label>Presence sensor</label>
+          <select class="ha-select" onchange="updateYaml()">
+            <option>binary_sensor.presence_kitchen</option>
+            <option>binary_sensor.presence_sensor_hobbyroom</option>
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="ha-field ha-entity-picker">
+          <label>Door / Window contact</label>
+          <select class="ha-select" onchange="updateYaml()">
+            <option>binary_sensor.usa_intrare_contact</option>
+            <option>binary_sensor.usa_gradina_contact</option>
+            <option>binary_sensor.usa_beci_contact</option>
+            <option>binary_sensor.usa_baie_contact</option>
+            <option>binary_sensor.uga_birou_contact</option>
+            <option>binary_sensor.geam_balcon_contact</option>
+            <option>binary_sensor.geam_bucatarie_contact</option>
+            <option>binary_sensor.geam_sufragerie_dreapta_contact</option>
+            <option>binary_sensor.geam_sufragerie_stanga_contact</option>
+            <option>binary_sensor.cutia_postala_contact</option>
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="ha-field ha-entity-picker">
+          <label>Motion sensor</label>
+          <select class="ha-select" onchange="updateYaml()">
+            <option>binary_sensor.motion_hol_etaj_occupancy</option>
+            <option>binary_sensor.motion_baie_occupancy</option>
+            <option>binary_sensor.motion_usa_intrare_occupancy</option>
+            <option>binary_sensor.motion_garaj_occupancy</option>
+            <option>binary_sensor.motion_mansarda_wall_occupancy</option>
+            <option>binary_sensor.motion_beci_hol_occupancy</option>
+            <option>binary_sensor.motion_hobbyraum_occupancy</option>
+            <option value="">— None —</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- THERMOSTAT -->
+      <div class="editor-section">
+        <div class="editor-section-title">🌡 Thermostat (optional)</div>
+        <div class="ha-field ha-entity-picker">
+          <label>Climate entity</label>
+          <select class="ha-select" onchange="updateYaml()">
+            <option value="">— None —</option>
+            <option>climate.living_room</option>
+            <option>climate.kitchen</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- SALT / ENERGY extras -->
+      <div class="editor-section">
+        <div class="editor-section-title">🧂 Salt Level (optional)</div>
+        <div class="ha-field ha-entity-picker">
+          <label>Salt level sensor</label>
+          <select class="ha-select" onchange="updateYaml()">
+            <option value="">— None —</option>
+            <option>sensor.salt_level</option>
+            <option>sensor.ultrasonic_sensor</option>
+          </select>
+        </div>
+      </div>
+
+    </div><!-- /editor-panel-body -->
+
+    <button class="save-btn" onclick="alert('In HA: config saved to lovelace YAML')">💾 Save Configuration</button>
+    <button class="cancel-btn" onclick="showView('dashboard',document.querySelectorAll(\'.etab\')[0])">Cancel</button>
+
+  </div><!-- /editor-panel -->
+
+</div><!-- /editor-view -->
+</div><!-- /view-editor -->
+
+<!-- ══════════════════ YAML VIEW ══════════════════ -->
+<div class="view" id="view-yaml">
+<div style="padding:20px;max-width:900px;margin:0 auto;">
+  <div style="margin-bottom:16px;">
+    <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px;">📄 Full Dashboard YAML Config</div>
+    <div style="font-size:12px;color:rgba(200,210,240,0.45);">Copy this into your lovelace configuration. Replace entity IDs with your actual HA entities.</div>
+  </div>
+  <div style="background:rgba(10,14,28,0.8);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:20px;">
+    <pre style="font-size:11px;color:#a5f3fc;font-family:'JetBrains Mono',monospace;white-space:pre-wrap;line-height:1.7;"># Smart Home Dashboard — lovelace configuration
+# Auto-generated from visual editor
+# Install via HACS → Frontend → Custom cards
+
+title: Smart Home Dashboard
+
+views:
+  - title: Floor 1
+    path: floor1
+    icon: mdi:home
+    panel: false
+    cards:
+      - type: custom:room-card
+        name: Living Room
+        icon: 🛋️
+        temp_sensor: sensor.temp_hum_livingroom_temperature
+        hum_sensor: sensor.temp_hum_livingroom_humidity
+        lights:
+          - light.baldachin_leds
+          - light.tv_leds
+        presence_sensor: binary_sensor.presence_kitchen
+        door_sensor: binary_sensor.geam_sufragerie_dreapta_contact
+        motion_sensor: binary_sensor.motion_hol_etaj_occupancy
+
+      - type: custom:room-card
+        name: Kitchen
+        icon: 🍳
+        temp_sensor: sensor.temp_hum_fete_temperature
+        hum_sensor: sensor.temp_hum_fete_humidity
+        lights:
+          - light.lumina_dulap_dreapta
+          - light.lumina_dulap_plita
+        presence_sensor: binary_sensor.presence_kitchen
+        door_sensor: binary_sensor.geam_bucatarie_contact
+        motion_sensor: ~
+
+      - type: custom:room-card
+        name: Office
+        icon: 🖥️
+        temp_sensor: sensor.temp_hum_birou_temperature
+        hum_sensor: sensor.temp_hum_birou_humidity
+        lights: []
+        door_sensor: binary_sensor.uga_birou_contact
+        motion_sensor: ~
+
+      - type: custom:room-card
+        name: Master Bedroom
+        icon: 🛏️
+        temp_sensor: sensor.temp_hum_dormitor_temperature
+        hum_sensor: sensor.temp_hum_dormitor_humidity
+        lights: []
+        door_sensor: ~
+        motion_sensor: ~
+
+      - type: custom:room-card
+        name: Bathroom
+        icon: 🛁
+        temp_sensor: sensor.temp_hum_baie_temperature
+        hum_sensor: sensor.temp_hum_baie_humidity
+        lights: []
+        presence_sensor: ~
+        door_sensor: binary_sensor.usa_baie_contact
+        motion_sensor: binary_sensor.motion_baie_occupancy
+
+      - type: custom:garage-card
+        name: Garage Door
+        floor: Floor 1
+        cover_entity: cover.smart_garage
+        door_sensor: binary_sensor.garage_door_garage_door_contact
+        temp_sensor: sensor.temp_hum_garaj_temperature
+
+      - type: custom:energy-card
+        power_entity: sensor.em_home_power
+        today_entity: sensor.em_home_energy_today
+        month_entity: sensor.em_home_energy_month
+        devices:
+          - name: Laundry
+            icon: 🫧
+            entity: sensor.em_laundry_power
+          - name: Ground Floor
+            icon: 🏢
+            entity: sensor.em_parter_power
+
+      - type: custom:sensor-overview-card
+        title: Security & Sensors
+        numeric_sensors:
+          - name: Salt Level
+            entity: sensor.salt_level
+            icon: 🧂
+            color: "#8b5cf6"
+            max: 100
+          - name: Garage Temp
+            entity: sensor.temp_hum_garaj_temperature
+            icon: 🏠
+            color: "#f59e0b"
+        binary_sensors:
+          - name: Entry Door
+            entity: binary_sensor.usa_intrare_contact
+            icon: 🚪
+            on_label: Open
+            off_label: Closed
+            alert_color: "#ef4444"
+            ok_color: "#10b981"
+          - name: Garden Door
+            entity: binary_sensor.usa_gradina_contact
+            icon: 🌿
+            on_label: Open
+            off_label: Closed
+            alert_color: "#ef4444"
+            ok_color: "#10b981"
+          - name: Mailbox
+            entity: binary_sensor.cutia_postala_contact
+            icon: 📬
+            on_label: Has mail!
+            off_label: Empty
+            alert_color: "#f59e0b"
+            ok_color: "#60a5fa"
+          - name: Motion Entry
+            entity: binary_sensor.motion_usa_intrare_occupancy
+            icon: 👁
+            on_label: Detected
+            off_label: Clear
+            alert_color: "#f59e0b"</pre>
+  </div>
+</div>
+</div><!-- /view-yaml -->
+
+</div><!-- /page -->
+
+<script>
+// ══ Clock ══
+function updateClock(){
+  const n=new Date();
+  const hh=String(n.getHours()).padStart(2,'0'),mm=String(n.getMinutes()).padStart(2,'0');
+  const el=document.getElementById('clock');
+  if(el)el.textContent=hh+':'+mm;
+  const tel=document.getElementById('topbar-time');
+  if(tel)tel.textContent=hh+':'+mm;
+  const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const del=document.getElementById('clock-date');
+  if(del)del.textContent=days[n.getDay()]+', '+n.getDate()+' '+months[n.getMonth()]+' '+n.getFullYear();
+}
+updateClock();setInterval(updateClock,10000);
+
+// ══ View switching ══
+function showView(id,tabEl){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.etab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('view-'+id).classList.add('active');
+  if(tabEl)tabEl.classList.add('active');
+}
+
+// ══ Floor tabs ══
+function switchFloor(el,id){
+  document.querySelectorAll('.floor-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  const labels={garden:'Garden',basement:'Basement',floor1:'House — Floor 1',ground:'Ground Floor',attic:'Attic'};
+  document.getElementById('floor-label').textContent=labels[id]||id;
+}
+
+// ══ Weather cycle ══
+let wp=0;
+function cycleWeather(){
+  wp=(wp+1)%2;
+  document.getElementById('wpanel-0').style.display=wp===0?'':'none';
+  document.getElementById('wpanel-1').style.display=wp===1?'':'none';
+}
+
+// ══ Rooms ══
+const rooms=[
+  {id:'living', icon:'🛋️',name:'Living Room', temp:22.1,hum:57,lights:1,presence:true,door:false,motion:false,hasData:true},
+  {id:'kitchen',icon:'🍳',name:'Kitchen',      temp:21.5,hum:52,lights:1,presence:true,door:false,motion:false,hasData:true},
+  {id:'bath',   icon:'🛁',name:'Bathroom',     temp:22.8,hum:68,lights:0,presence:false,door:false,motion:false,hasData:true},
+  {id:'hall',   icon:'🚪',name:'Hallway',      temp:null,hum:null,lights:0,presence:false,door:true,motion:false,hasData:false},
+  {id:'ward',   icon:'👗',name:'Wardrobe',     temp:null,hum:null,lights:0,presence:false,door:false,motion:false,hasData:false},
+  {id:'kids1',  icon:'🧸',name:'Kids Room 1',  temp:null,hum:null,lights:0,presence:false,door:false,motion:false,hasData:false},
+  {id:'kids2',  icon:'🧸',name:'Kids Room 2',  temp:null,hum:null,lights:0,presence:false,door:false,motion:false,hasData:false},
+  {id:'bed',    icon:'🛏️',name:'Master Bed',   temp:19.8,hum:48,lights:0,presence:true,door:false,motion:false,hasData:true},
+];
+
+function buildRooms(){
+  const g=document.getElementById('rooms-grid');
+  if(!g)return;
+  g.innerHTML='';
+  rooms.forEach(r=>{
+    const d=document.createElement('div');
+    d.className='room-card'+(r.lights>0?' active':'');
+    var h='<div class="room-icon">'+r.icon+'</div>';
+    h+='<div class="room-name">'+r.name+'</div>';
+    if(r.lights>0)h+='<div class="lights-on">💡 '+r.lights+' light on</div>';
+    if(r.hasData){
+      h+='<div class="room-temp">'+r.temp+'°</div>';
+      h+='<div class="room-hum">💧 '+r.hum+'%</div>';
+    }else{
+      h+='<div class="room-dash">— / —</div>';
+    }
+    h+='<div class="sensor-dots">';
+    var pd=r.presence?'#10b981':'rgba(255,255,255,0.15)';
+    var ps=r.presence?'box-shadow:0 0 5px rgba(16,185,129,0.8);':'';
+    var dd=r.door?'#ef4444':'#3b82f6';
+    var ds='box-shadow:0 0 5px '+(r.door?'rgba(239,68,68,0.8)':'rgba(59,130,246,0.5)')+';';
+    var md=r.motion?'#f59e0b':'rgba(255,255,255,0.15)';
+    var ms=r.motion?'box-shadow:0 0 5px rgba(245,158,11,0.8);':'';
+    h+='<div class="sdot"><div class="sdot-pip" style="background:'+pd+';'+ps+'"></div>🧍</div>';
+    h+='<div class="sdot"><div class="sdot-pip" style="background:'+dd+';'+ds+'"></div>🚪</div>';
+    h+='<div class="sdot"><div class="sdot-pip" style="background:'+md+';'+ms+'"></div>👁</div>';
+    h+='</div>';
+    h+='<div class="room-btns">';
+    h+='<div class="rbtn'+(r.lights>0?' active':'')+'">💡</div>';
+    h+='<div class="rbtn">🌡</div>';
+    h+='<div class="rbtn">ℹ</div>';
+    h+='</div>';
+    d.innerHTML=h;
+    g.appendChild(d);
+  });
+}
+buildRooms();
+
+// ══ Right panel tabs ══
+function switchRightTab(tab){
+  ['spotify','tv','cam','bell'].forEach(t=>{
+    document.getElementById('rtab-'+t).classList.toggle('active',t===tab);
+    document.getElementById('rpanel-'+t).style.display=t===tab?'':'none';
+  });
+  if(tab==='spotify'){playing=true;document.getElementById('play-btn').textContent='⏸';drawAlbum();}
+}
+
+// ══ Player ══
+let playing=true,progPct=0.28,playerInterval=null,trackIdx=0;
+const tracks=[
+  {name:'Meadows',artist:'Edlan, Djah',total:'4:42',totalSec:282,c1:'#533483',c2:'#0f3460',c3:'#e94560'},
+  {name:'Major Happy',artist:'Fred V & Grafix',total:'4:46',totalSec:286,c1:'#1a1a2e',c2:'#16213e',c3:'#0f3460'},
+];
+
+function startProgress(){
+  if(playerInterval)clearInterval(playerInterval);
+  playerInterval=setInterval(()=>{
+    if(!playing)return;
+    const t=tracks[trackIdx];progPct+=1/t.totalSec;
+    if(progPct>=1){progPct=0;nextTrack();return;}
+    updateProgressUI();
+  },1000);
+}
+
+function updateProgressUI(){
+  const t=tracks[trackIdx];
+  const pf=document.getElementById('prog-fill');
+  if(pf)pf.style.width=(progPct*100)+'%';
+  const sec=Math.round(progPct*t.totalSec),m=Math.floor(sec/60),s=String(sec%60).padStart(2,'0');
+  const pt=document.getElementById('prog-time');
+  if(pt)pt.textContent=m+':'+s;
+}
+function togglePlay(){playing=!playing;document.getElementById('play-btn').textContent=playing?'⏸':'▶';}
+function nextTrack(){trackIdx=(trackIdx+1)%tracks.length;loadTrack();}
+function prevTrack(){trackIdx=(trackIdx-1+tracks.length)%tracks.length;loadTrack();}
+function loadTrack(){const t=tracks[trackIdx];document.querySelector('.track-name').textContent=t.name;document.querySelector('.track-artist').textContent=t.artist+' · media_player.spotify';progPct=0;updateProgressUI();drawAlbum();}
+
+function drawAlbum(){
+  const canvas=document.getElementById('albumCanvas');
+  if(!canvas)return;
+  const ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height,t=tracks[trackIdx],time=Date.now()*.001;
+  ctx.clearRect(0,0,W,H);
+  const bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,W*.8);
+  bg.addColorStop(0,t.c2);bg.addColorStop(1,t.c1);
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  if(playing){
+    ctx.save();ctx.translate(W/2,H/2);ctx.rotate(time*.5);
+    for(let i=0;i<8;i++){
+      const ang=(i/8)*Math.PI*2,r0=20,r1=110;
+      const grd=ctx.createLinearGradient(Math.cos(ang)*r0,Math.sin(ang)*r0,Math.cos(ang)*r1,Math.sin(ang)*r1);
+      grd.addColorStop(0,t.c3+'88');grd.addColorStop(1,'transparent');
+      ctx.beginPath();ctx.arc(0,0,r1,ang-.3,ang+.3);ctx.arc(0,0,r0,ang+.3,ang-.3,true);
+      ctx.closePath();ctx.fillStyle=grd;ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.beginPath();ctx.arc(W/2,H/2,28,0,Math.PI*2);ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fill();
+  ctx.beginPath();ctx.arc(W/2,H/2,6,0,Math.PI*2);ctx.fillStyle='rgba(255,255,255,0.6)';ctx.fill();
+  if(playing)requestAnimationFrame(drawAlbum);
+}
+drawAlbum();
+startProgress();
+
+// ══ Editor helpers ══
+function switchEditorCard(val){
+  ['room','energy','garage','sensor'].forEach(t=>{
+    const el=document.getElementById('editor-preview-'+t);
+    if(el)el.style.display=t===val?'':'none';
+  });
+}
+function addLight(sel){
+  if(!sel.value)return;
+  const chip=document.createElement('div');
+  chip.className='entity-chip';
+  chip.innerHTML='<span class="entity-chip-icon">💡</span><span class="entity-chip-name">'+sel.value+'</span><span class="entity-chip-state">on</span><span class="entity-chip-remove" onclick="this.parentElement.remove();updateYaml()">✕</span>';
+  document.getElementById('lights-list').appendChild(chip);
+  sel.value='';
+  updateYaml();
+}
+function updateYaml(){
+  const name=document.getElementById('ep-name')?.textContent||'Living Room';
+  const yaml=`type: custom:room-card\nname: ${name}\nicon: 🛋️\ntemp_sensor: sensor.temp_hum_livingroom_temperature\nhum_sensor: sensor.temp_hum_livingroom_humidity\nlights:\n  - light.baldachin_leds\npresence_sensor: binary_sensor.presence_kitchen\ndoor_sensor: binary_sensor.usa_intrare_contact\nmotion_sensor: binary_sensor.motion_hol_etaj_occupancy`;
+  const el=document.getElementById('yaml-preview');
+  if(el)el.textContent=yaml;
+}
+</script>
+</body>
+</html>
