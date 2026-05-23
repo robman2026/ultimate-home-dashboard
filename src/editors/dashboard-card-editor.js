@@ -531,4 +531,4 @@ export class DashboardCardEditor extends LitElement {
   }
 }
 
-customElements.define('dashboard-card-editor', DashboardCardEditor);
+customElements.define('uhd-dashboard-card-editor', DashboardCardEditor);

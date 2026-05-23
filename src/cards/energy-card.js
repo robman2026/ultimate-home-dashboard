@@ -152,4 +152,4 @@ export class EnergyCard extends LitElement {
   }
 }
 
-customElements.define('energy-card', EnergyCard);
+customElements.define('uhd-energy-card', EnergyCard);

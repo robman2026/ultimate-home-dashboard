@@ -221,4 +221,4 @@ export class ClockWeatherCard extends LitElement {
   }
 }
 
-customElements.define('clock-weather-card', ClockWeatherCard);
+customElements.define('uhd-clock-weather-card', ClockWeatherCard);

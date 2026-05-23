@@ -121,4 +121,4 @@ export class SensorOverviewCard extends LitElement {
   }
 }
 
-customElements.define('sensor-overview-card', SensorOverviewCard);
+customElements.define('uhd-sensor-overview-card', SensorOverviewCard);

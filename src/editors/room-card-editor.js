@@ -207,4 +207,4 @@ export class RoomCardEditor extends LitElement {
   }
 }
 
-customElements.define('room-card-editor', RoomCardEditor);
+customElements.define('uhd-room-card-editor', RoomCardEditor);

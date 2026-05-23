@@ -236,4 +236,4 @@ export class GarageCard extends LitElement {
   }
 }
 
-customElements.define('garage-card', GarageCard);
+customElements.define('uhd-garage-card', GarageCard);

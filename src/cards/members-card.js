@@ -82,4 +82,4 @@ export class MembersCard extends LitElement {
   }
 }
 
-customElements.define('members-card', MembersCard);
+customElements.define('uhd-members-card', MembersCard);

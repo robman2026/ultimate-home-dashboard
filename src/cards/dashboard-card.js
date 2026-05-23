@@ -176,31 +176,31 @@ export class DashboardCard extends LitElement {
           <!-- LEFT COLUMN -->
           <div class="col">
             ${clock_weather ? html`
-              <clock-weather-card
+              <uhd-clock-weather-card
                 .hass=${this.hass}
                 .config=${clock_weather}>
-              </clock-weather-card>
+              </uhd-clock-weather-card>
             ` : ''}
 
             ${members ? html`
-              <members-card
+              <uhd-members-card
                 .hass=${this.hass}
                 .config=${members}>
-              </members-card>
+              </uhd-members-card>
             ` : ''}
 
             ${floor.garage ? html`
-              <garage-card
+              <uhd-garage-card
                 .hass=${this.hass}
                 .config=${floor.garage}>
-              </garage-card>
+              </uhd-garage-card>
             ` : ''}
 
             ${sensor_overview ? html`
-              <sensor-overview-card
+              <uhd-sensor-overview-card
                 .hass=${this.hass}
                 .config=${sensor_overview}>
-              </sensor-overview-card>
+              </uhd-sensor-overview-card>
             ` : ''}
           </div>
 
@@ -208,29 +208,29 @@ export class DashboardCard extends LitElement {
           <div class="col">
             <div class="rooms-grid">
               ${rooms.map(room => html`
-                <room-card
+                <uhd-room-card
                   .hass=${this.hass}
                   .config=${room}>
-                </room-card>
+                </uhd-room-card>
               `)}
             </div>
 
             ${energy ? html`
-              <energy-card
+              <uhd-energy-card
                 .hass=${this.hass}
                 .config=${energy}>
-              </energy-card>
+              </uhd-energy-card>
             ` : ''}
           </div>
 
           <!-- RIGHT COLUMN -->
           <div class="col">
             ${media ? html`
-              <media-card
+              <uhd-media-card
                 .hass=${this.hass}
                 .config=${media}
                 style="flex:1;">
-              </media-card>
+              </uhd-media-card>
             ` : ''}
           </div>
 
@@ -254,7 +254,7 @@ export class DashboardCard extends LitElement {
   }
 
   static getConfigElement() {
-    return document.createElement('dashboard-card-editor');
+    return document.createElement('uhd-dashboard-card-editor');
   }
 
   static getStubConfig() {

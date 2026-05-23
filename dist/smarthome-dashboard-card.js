@@ -862,7 +862,7 @@ f(K, "properties", {
     .pager-dot.active { width: 18px; background: #fff; }
     .pager-dot:not(.active) { width: 6px; }
   `);
-customElements.define("clock-weather-card", K);
+customElements.define("uhd-clock-weather-card", K);
 class Y extends $ {
   setConfig(e) {
     this.config = e;
@@ -934,7 +934,7 @@ f(Y, "properties", {
     .member-status.home { color: var(--sd-green); }
     .member-status.away { color: var(--sd-text-muted); }
   `);
-customElements.define("members-card", Y);
+customElements.define("uhd-members-card", Y);
 class Z extends $ {
   setConfig(e) {
     this.config = e;
@@ -1033,7 +1033,7 @@ class Z extends $ {
     });
   }
   static getConfigElement() {
-    return document.createElement("room-card-editor");
+    return document.createElement("uhd-room-card-editor");
   }
   static getStubConfig() {
     return {
@@ -1106,7 +1106,7 @@ f(Z, "properties", {
     .icon-btn.active { background: rgba(245,158,11,0.25); color: #f59e0b;
       border-color: rgba(245,158,11,0.4); }
   `);
-customElements.define("room-card", Z);
+customElements.define("uhd-room-card", Z);
 class Q extends $ {
   constructor() {
     super(), this._localOffset = 0, this._animFrame = null;
@@ -1303,7 +1303,7 @@ f(Q, "properties", {
     .status-val.closed { color: #10b981; }
     .status-val.moving { color: #f97316; }
   `);
-customElements.define("garage-card", Q);
+customElements.define("uhd-garage-card", Q);
 class X extends $ {
   setConfig(e) {
     this.config = e;
@@ -1441,7 +1441,7 @@ f(X, "properties", {
     .device-name { font-size: 11px; color: var(--sd-text-secondary); flex: 1; }
     .device-val { font-size: 12px; font-weight: 700; color: var(--sd-gold); }
   `);
-customElements.define("energy-card", X);
+customElements.define("uhd-energy-card", X);
 class ee extends $ {
   constructor() {
     super(), this._activeTab = "spotify";
@@ -1655,7 +1655,7 @@ f(ee, "properties", {
     .placeholder-icon { font-size: 36px; opacity: 0.25; margin-bottom: 8px; }
     .placeholder-text { font-size: 12px; color: var(--sd-text-muted); }
   `);
-customElements.define("media-card", ee);
+customElements.define("uhd-media-card", ee);
 class te extends $ {
   setConfig(e) {
     this.config = e;
@@ -1762,7 +1762,7 @@ f(te, "properties", {
     .bin-state{ font-size:11px;font-weight:700; }
     .binaries-list { display:flex;flex-direction:column;gap:5px; }
   `);
-customElements.define("sensor-overview-card", te);
+customElements.define("uhd-sensor-overview-card", te);
 class ie extends $ {
   constructor() {
     super(), this._activeFloor = 0;
@@ -1802,31 +1802,31 @@ class ie extends $ {
           <!-- LEFT COLUMN -->
           <div class="col">
             ${i ? l`
-              <clock-weather-card
+              <uhd-clock-weather-card
                 .hass=${this.hass}
                 .config=${i}>
-              </clock-weather-card>
+              </uhd-clock-weather-card>
             ` : ""}
 
             ${t ? l`
-              <members-card
+              <uhd-members-card
                 .hass=${this.hass}
                 .config=${t}>
-              </members-card>
+              </uhd-members-card>
             ` : ""}
 
             ${d.garage ? l`
-              <garage-card
+              <uhd-garage-card
                 .hass=${this.hass}
                 .config=${d.garage}>
-              </garage-card>
+              </uhd-garage-card>
             ` : ""}
 
             ${r ? l`
-              <sensor-overview-card
+              <uhd-sensor-overview-card
                 .hass=${this.hass}
                 .config=${r}>
-              </sensor-overview-card>
+              </uhd-sensor-overview-card>
             ` : ""}
           </div>
 
@@ -1834,29 +1834,29 @@ class ie extends $ {
           <div class="col">
             <div class="rooms-grid">
               ${c.map((p) => l`
-                <room-card
+                <uhd-room-card
                   .hass=${this.hass}
                   .config=${p}>
-                </room-card>
+                </uhd-room-card>
               `)}
             </div>
 
             ${a ? l`
-              <energy-card
+              <uhd-energy-card
                 .hass=${this.hass}
                 .config=${a}>
-              </energy-card>
+              </uhd-energy-card>
             ` : ""}
           </div>
 
           <!-- RIGHT COLUMN -->
           <div class="col">
             ${s ? l`
-              <media-card
+              <uhd-media-card
                 .hass=${this.hass}
                 .config=${s}
                 style="flex:1;">
-              </media-card>
+              </uhd-media-card>
             ` : ""}
           </div>
 
@@ -1879,7 +1879,7 @@ class ie extends $ {
     `;
   }
   static getConfigElement() {
-    return document.createElement("dashboard-card-editor");
+    return document.createElement("uhd-dashboard-card-editor");
   }
   static getStubConfig() {
     return {
@@ -2563,7 +2563,7 @@ f(de, "properties", {
       line-height: 1.5;
     }
   `);
-customElements.define("dashboard-card-editor", de);
+customElements.define("uhd-dashboard-card-editor", de);
 class he extends $ {
   setConfig(e) {
     this.config = e;
@@ -2757,7 +2757,7 @@ f(he, "properties", {
       margin-top: 4px;
     }
   `);
-customElements.define("room-card-editor", he);
+customElements.define("uhd-room-card-editor", he);
 window.customCards = window.customCards ?? [];
 const Ie = [
   { type: "smarthome-dashboard-card", cls: ie, name: "Smart Home Dashboard", description: "Full smart home dashboard — rooms, energy, media, sensors, garage", preview: !0 },

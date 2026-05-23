@@ -167,7 +167,7 @@ export class RoomCard extends LitElement {
   }
 
   static getConfigElement() {
-    return document.createElement('room-card-editor');
+    return document.createElement('uhd-room-card-editor');
   }
 
   static getStubConfig() {
@@ -184,4 +184,4 @@ export class RoomCard extends LitElement {
   }
 }
 
-customElements.define('room-card', RoomCard);
+customElements.define('uhd-room-card', RoomCard);

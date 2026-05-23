@@ -232,4 +232,4 @@ export class MediaCard extends LitElement {
   }
 }
 
-customElements.define('media-card', MediaCard);
+customElements.define('uhd-media-card', MediaCard);
