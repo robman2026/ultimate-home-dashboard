@@ -1,11 +1,14 @@
+/**
+ * SmartHome Dashboard
+ * Author: robman2026
+ * GitHub: https://github.com/robman2026/ultimate-home-dashboard
+ * Version: 1.2.0
+ * License: MIT
+ */
+
 var We = Object.defineProperty;
 var Ge = (o, e, t) => e in o ? We(o, e, { enumerable: !0, configurable: !0, writable: !0, value: t }) : o[e] = t;
 var f = (o, e, t) => Ge(o, typeof e != "symbol" ? e + "" : e, t);
-/**
- * @license
- * Copyright 2019 Google LLC
- * SPDX-License-Identifier: BSD-3-Clause
- */
 const G = globalThis, pe = G.ShadowRoot && (G.ShadyCSS === void 0 || G.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype, ge = Symbol(), $e = /* @__PURE__ */ new WeakMap();
 let Me = class {
   constructor(e, t, i) {
