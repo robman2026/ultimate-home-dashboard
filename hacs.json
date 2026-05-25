@@ -1,7 +1,0 @@
-{
-    "name": "Smart Home Dashboard Card",
-    "description": "A beautiful multi-room smart home dashboard for Home Assistant.",
-    "content_in_root": false,
-    "filename": "smarthome-dashboard-card.js",
-    "render_readme": true
-}
