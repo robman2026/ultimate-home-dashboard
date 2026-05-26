@@ -16,7 +16,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.1.1';
+const CARD_VERSION = '0.1.2';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -440,6 +440,11 @@ const CARD_STYLES = `
     color: var(--shd-text-primary);
     font-family: var(--shd-font);
     min-height: 600px;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .shd-root *, .shd-root *::before, .shd-root *::after {
+    box-sizing: border-box;
   }
 
   /* Signature gradient background */
@@ -463,12 +468,14 @@ const CARD_STYLES = `
 
   /* ── TOPBAR ── */
   .shd-topbar {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 8px;
     padding: 0 20px;
     background: rgba(10, 14, 28, 0.6);
     border-bottom: 1px solid var(--shd-border);
     backdrop-filter: var(--shd-blur);
     flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
   }
   .shd-topbar-logo {
     display: flex; align-items: center; gap: 8px;
@@ -527,10 +534,12 @@ const CARD_STYLES = `
     gap: 12px;
     padding: 12px;
     min-height: 0;
+    min-width: 0;
   }
   .shd-col {
     display: flex; flex-direction: column; gap: 10px;
     min-height: 0;
+    min-width: 0;
   }
 
   /* ── CARD WRAPPER (used by all widgets) ── */
@@ -543,6 +552,8 @@ const CARD_STYLES = `
     position: relative;
     overflow: hidden;
     transition: border-color 0.2s;
+    max-width: 100%;
+    word-wrap: break-word;
   }
   .shd-card:hover { border-color: var(--shd-border-glow); }
   .shd-card::before {
@@ -589,19 +600,66 @@ const CARD_STYLES = `
     font-size: 24px; font-weight: 200; color: #fff;
   }
 
-  /* ── RESPONSIVE: ResizeObserver-driven breakpoints ── */
+  /* ── RESPONSIVE: ResizeObserver-driven breakpoints ────────────────
+     Both classes (bp-sm AND bp-xs) are now applied when needed, so
+     mobile inherits the 1-column layout from sm AND adds extra-tight
+     spacing from xs. Prevents the iPhone overflow bug from v0.1.1.
+     ────────────────────────────────────────────────────────────── */
+
+  /* Tablet & smaller: collapse to single column */
   .shd-root.shd-bp-sm .shd-main {
     grid-template-columns: 1fr;
   }
-  .shd-root.shd-bp-sm .shd-topbar { padding: 0 12px; }
-  .shd-root.shd-bp-sm .shd-floor-tab { font-size: 10px; padding: 4px 12px; }
-
-  .shd-root.shd-bp-xs .shd-main {
-    padding: 8px; gap: 8px;
+  .shd-root.shd-bp-sm .shd-topbar {
+    padding: 0 12px;
   }
-  .shd-root.shd-bp-xs .shd-card { padding: 12px; }
-  .shd-root.shd-bp-xs .shd-topbar { padding: 8px 12px; height: auto; }
-  .shd-root.shd-bp-xs .shd-app { grid-template-rows: auto 1fr; }
+  .shd-root.shd-bp-sm .shd-floor-tab {
+    font-size: 11px;
+    padding: 4px 12px;
+  }
+  .shd-root.shd-bp-sm .shd-col {
+    min-width: 0;
+  }
+
+  /* Phone-sized: even tighter padding, allow topbar to wrap */
+  .shd-root.shd-bp-xs .shd-main {
+    padding: 8px;
+    gap: 8px;
+  }
+  .shd-root.shd-bp-xs .shd-card {
+    padding: 12px;
+  }
+  .shd-root.shd-bp-xs .shd-topbar {
+    padding: 8px 12px;
+    min-height: 48px;
+    height: auto;
+  }
+  .shd-root.shd-bp-xs .shd-app {
+    grid-template-rows: auto 1fr;
+  }
+  .shd-root.shd-bp-xs .shd-floor-tab {
+    font-size: 10px;
+    padding: 3px 10px;
+  }
+  .shd-root.shd-bp-xs .shd-topbar-logo {
+    margin-right: 6px;
+    font-size: 13px;
+  }
+  .shd-root.shd-bp-xs .shd-topbar-time {
+    font-size: 11px;
+  }
+  .shd-root.shd-bp-xs .shd-status-chip span:not(.shd-status-dot) {
+    display: none;
+  }
+  .shd-root.shd-bp-xs {
+    min-height: 0;
+  }
+  .shd-root.shd-bp-xs .shd-app {
+    min-height: 0;
+  }
+  .shd-root.shd-bp-xs .shd-rooms-grid-placeholder {
+    min-height: 240px;
+  }
 `;
 
 /* ════════════════════════════════════════════════════════════════════
@@ -814,8 +872,10 @@ class SmartHomeDashboardCard extends HTMLElement {
     this._ro = new ResizeObserver(entries => {
       const w = entries[0].contentRect.width;
       root.classList.remove('shd-bp-sm', 'shd-bp-xs');
-      if (w < 480)      root.classList.add('shd-bp-xs');
-      else if (w < 1100) root.classList.add('shd-bp-sm');
+      // Apply breakpoints cumulatively: at xs width we ALSO get bp-sm
+      // (so xs inherits sm's 1-column layout, then layers on its own tightness).
+      if (w < 1100) root.classList.add('shd-bp-sm');
+      if (w < 480)  root.classList.add('shd-bp-xs');
     });
     this._ro.observe(root);
   }
