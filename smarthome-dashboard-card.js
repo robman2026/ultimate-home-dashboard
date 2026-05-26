@@ -2,28 +2,25 @@
  * smarthome-dashboard-card
  * A unified Samsung-Premium-styled smart home dashboard card for Home Assistant.
  *
- * Phase 2a — Widget bodies (left + right columns) wired to live entities:
- *   · Clock + sun (with real sunrise/sunset from sun.sun)
- *   · Weather card (temp, condition, pressure, humidity, wind)
- *   · Household members (presence pills, entity_picture)
- *   · Garage door status (cover or contact, with "x ago" humanization)
- *   · Salt level (circular gauge, refill estimate)
- *   · Media tabs: Spotify (album art + progress + controls)
- *                · TV (inlined Samsung SolarCell remote)
- *                · Surveillance (configurable camera grid using ha-camera-stream)
- *   · Mower (animated SVG, status, battery, start/pause/dock controls)
- *   · Power (current W + today/month kWh via HA history API)
+ * Phase 2a (v0.2.0) — Widget bodies (left + right columns) wired to live entities:
+ *   · Clock + sun · Weather · Members · Garage · Salt · Spotify · TV (inlined remote)
+ *     · Surveillance · Mower (animated) · Power summary
  *
- * Coming next:
- *   · Phase 2b — Editor sections for all the widgets above
- *   · Phase 3  — Adaptive room cards, room modal, garage SVG modal, power monthly modal
+ * Phase 2b + 3 + 4 (v0.3.0) — Editor sections, rooms grid, modals, labels:
+ *   · Full visual editor: Appearance · Header · Members · Garage · Salt · Mower
+ *     · Spotify · TV · Surveillance · Power · Floors & Rooms (nested) · Labels
+ *   · Adaptive room cards with click-to-modal
+ *   · Conditional room modal (only configured sensors/lights/extras render)
+ *   · Animated garage modal with RAL 7016 scene + Open/Stop/Close controls
+ *   · Power monthly modal with 12-month bar chart (history API)
+ *   · HA label filtering (only rooms with matching labels shown)
  *
  * Author:   robman2026
  * Repo:     https://github.com/robman2026/smarthome-dashboard-card
  * License:  MIT
  */
 
-const CARD_VERSION = '0.2.0';
+const CARD_VERSION = '0.3.0';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -1283,6 +1280,448 @@ const CARD_STYLES = `
     color: var(--shd-accent-gold);
   }
 
+  /* ════════ PHASE 3 — ROOMS GRID + MODALS ════════ */
+
+  /* Rooms grid — adaptive cards */
+  .shd-rooms-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    grid-auto-rows: min-content;
+  }
+  .shd-rooms-header {
+    display: flex; align-items: center; gap: 7px;
+    margin-bottom: 10px;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase;
+    color: var(--shd-text-secondary);
+  }
+  .shd-rooms-header .shd-rh-floor {
+    color: #fff; font-weight: 700; letter-spacing: 0; text-transform: none;
+    font-size: 11px;
+  }
+  .shd-rooms-header .shd-rh-count {
+    margin-left: auto;
+    font-size: 9px; background: rgba(255,255,255,0.06);
+    padding: 2px 7px; border-radius: 6px;
+    color: var(--shd-text-muted);
+  }
+  .shd-rooms-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--shd-text-muted);
+    font-size: 13px;
+  }
+  .shd-rooms-empty .shd-re-icon {
+    font-size: 36px; opacity: 0.4; margin-bottom: 8px;
+  }
+  .shd-rooms-empty .shd-re-hint {
+    font-size: 11px; margin-top: 6px;
+    color: var(--shd-text-muted);
+  }
+
+  .shd-room {
+    background: rgba(22,30,58,0.8);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 10px 9px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex; flex-direction: column;
+    gap: 5px;
+    position: relative;
+    min-width: 0;
+  }
+  .shd-room:hover {
+    border-color: rgba(255,255,255,0.2);
+    transform: translateY(-2px);
+  }
+  .shd-room.shd-on {
+    background: linear-gradient(135deg, rgba(245,158,11,0.25), rgba(245,158,11,0.1));
+    border-color: rgba(245,158,11,0.7);
+    box-shadow: 0 0 20px rgba(245,158,11,0.2);
+  }
+  .shd-room-head {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .shd-room-icon {
+    font-size: 22px; line-height: 1;
+  }
+  .shd-room-name {
+    font-size: 12px; font-weight: 700; color: #fff;
+    line-height: 1.2; flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .shd-room-on-pill {
+    font-size: 9px; color: #fcd34d; font-weight: 700;
+    text-shadow: 0 0 10px rgba(252,211,77,0.7);
+    padding: 2px 6px;
+    background: rgba(245,158,11,0.18);
+    border-radius: 5px;
+  }
+  .shd-room-metrics {
+    display: flex; flex-wrap: wrap; gap: 4px;
+  }
+  .shd-room-metric {
+    flex: 1; min-width: 54px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 7px;
+    padding: 5px 7px;
+  }
+  .shd-room-metric.shd-rm-temp  { background: rgba(245,158,11,0.10); border-top: 2px solid #f59e0b; }
+  .shd-room-metric.shd-rm-hum   { background: rgba(96,165,250,0.10); border-top: 2px solid #60a5fa; }
+  .shd-room-metric.shd-rm-power { background: rgba(245,158,11,0.08); border-top: 2px solid #f59e0b; }
+  .shd-rm-lbl {
+    font-size: 8px; color: var(--shd-text-muted);
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  .shd-rm-val {
+    font-size: 15px; font-weight: 600; color: #fff; line-height: 1;
+    margin-top: 2px;
+  }
+  .shd-rm-val.shd-rm-big { font-size: 22px; font-weight: 300; }
+  .shd-room-sensors {
+    display: flex; flex-wrap: wrap; gap: 4px;
+  }
+  .shd-r-sensor {
+    display: flex; align-items: center; gap: 4px;
+    padding: 3px 7px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 6px;
+    font-size: 10px;
+    color: rgba(255,255,255,0.7);
+  }
+  .shd-r-sensor .shd-rs-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+  }
+  .shd-r-sensor.shd-rs-alert  { background: rgba(239,68,68,0.12); color: #ef4444; }
+  .shd-r-sensor.shd-rs-warn   { background: rgba(245,158,11,0.12); color: #f59e0b; }
+  .shd-r-sensor.shd-rs-ok     { background: rgba(16,185,129,0.10); color: #10b981; }
+
+  /* ════════ MODAL OVERLAY ════════ */
+  .shd-modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(8px);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+  }
+  .shd-modal-overlay.shd-show { display: flex; }
+  .shd-modal {
+    background: var(--shd-bg-deep);
+    border: 1px solid var(--shd-border-glow);
+    border-radius: 22px;
+    padding: 22px;
+    width: 100%;
+    max-width: 620px;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    font-family: var(--shd-font);
+    color: var(--shd-text-primary);
+  }
+  .shd-modal.shd-wide { max-width: 780px; }
+  .shd-modal-close {
+    position: absolute; top: 14px; right: 14px;
+    width: 30px; height: 30px; border-radius: 50%;
+    border: none; background: rgba(255,255,255,0.08);
+    color: #fff; cursor: pointer;
+    font-size: 14px;
+    z-index: 10;
+  }
+  .shd-modal-close:hover { background: rgba(255,255,255,0.16); }
+  .shd-modal-header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 16px;
+  }
+  .shd-modal-icon {
+    width: 38px; height: 38px; border-radius: 12px;
+    background: rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .shd-modal-subtitle {
+    font-size: 10px; color: var(--shd-text-muted);
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  .shd-modal-title {
+    font-size: 20px; font-weight: 700;
+  }
+
+  /* ════════ ROOM MODAL ════════ */
+  .shd-rmod-bar {
+    background: rgba(255,255,255,0.04);
+    border-radius: 14px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .shd-rmod-bar-title {
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase;
+    color: var(--shd-text-secondary);
+    margin-bottom: 8px;
+    letter-spacing: .07em;
+  }
+  .shd-rmod-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+  }
+  .shd-rmod-metric {
+    border-radius: 10px;
+    padding: 10px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-top-width: 4px;
+  }
+  .shd-rmod-metric.shd-rmm-temp     { border-top-color: #fbbf24; background: rgba(245,166,35,0.12); }
+  .shd-rmod-metric.shd-rmm-hum      { border-top-color: #60a5fa; background: rgba(96,165,250,0.12); }
+  .shd-rmod-metric.shd-rmm-presence { border-top-color: #4ade80; background: rgba(74,222,128,0.12); }
+  .shd-rmod-metric.shd-rmm-motion   { border-top-color: #a78bfa; background: rgba(167,139,250,0.12); }
+  .shd-rmod-metric.shd-rmm-door     { border-top-color: #3b82f6; background: rgba(59,130,246,0.12); }
+  .shd-rmod-metric.shd-rmm-power    { border-top-color: #f59e0b; background: rgba(245,158,11,0.12); }
+  .shd-rmod-lbl {
+    font-size: 9px; color: var(--shd-text-muted);
+    text-transform: uppercase; letter-spacing: .07em;
+    margin-bottom: 4px;
+  }
+  .shd-rmod-val {
+    font-size: 22px; font-weight: 300; color: #fff;
+  }
+  .shd-rmod-val.shd-rmm-small {
+    font-size: 15px; font-weight: 700;
+  }
+  .shd-rmod-section {
+    background: rgba(255,255,255,0.04);
+    border-radius: 14px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .shd-rmod-section-title {
+    font-size: 10px; font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .shd-rmod-section-title .shd-rmod-count {
+    margin-left: auto;
+    font-size: 9px; color: var(--shd-text-muted);
+    background: rgba(255,255,255,0.04);
+    padding: 2px 7px; border-radius: 5px;
+    font-weight: 600;
+  }
+
+  /* Light row inside room modal */
+  .shd-light-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.04);
+    margin-bottom: 5px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+  }
+  .shd-light-row:hover { background: rgba(255,255,255,0.06); }
+  .shd-light-row.shd-light-on {
+    background: rgba(245,166,35,0.10);
+    border-color: rgba(245,166,35,0.20);
+  }
+  .shd-light-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    flex-shrink: 0;
+  }
+  .shd-light-dot.shd-on {
+    background: var(--shd-accent-gold);
+    box-shadow: 0 0 8px rgba(245,166,35,0.5);
+  }
+  .shd-light-name {
+    flex: 1;
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .shd-light-row.shd-light-on .shd-light-name { color: #fff; }
+  .shd-light-badge {
+    font-size: 9px; font-weight: 700;
+    padding: 3px 9px; border-radius: 7px;
+  }
+  .shd-light-badge.shd-on { background: rgba(245,166,35,0.20); color: var(--shd-accent-gold); }
+  .shd-light-badge.shd-off { background: rgba(248,113,113,0.15); color: var(--shd-accent-red); }
+
+  /* Extra sensors grid in modal */
+  .shd-rmod-sensors {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
+  }
+  .shd-rmod-sens {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .shd-rmod-sens-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .shd-rmod-sens-info { flex: 1; min-width: 0; }
+  .shd-rmod-sens-lbl {
+    font-size: 9px; color: var(--shd-text-muted);
+    text-transform: uppercase; letter-spacing: .05em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .shd-rmod-sens-val {
+    font-size: 14px; font-weight: 600; color: #fff;
+    font-family: var(--shd-mono);
+  }
+
+  /* ════════ GARAGE MODAL ════════ */
+  .shd-garage-grid {
+    display: grid;
+    grid-template-columns: 1fr 160px;
+    gap: 16px;
+    align-items: start;
+  }
+  .shd-garage-scene {
+    background: #0a0e1c;
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .shd-garage-scene svg { width: 100%; height: auto; display: block; }
+  .shd-garage-ctrls {
+    display: flex; flex-direction: column;
+    gap: 10px;
+  }
+  .shd-gctrl-label {
+    font-size: 9px; color: var(--shd-text-muted);
+    text-transform: uppercase; letter-spacing: .08em;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .shd-gctrl-btn {
+    padding: 14px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px;
+    transition: filter 0.15s;
+  }
+  .shd-gctrl-btn:hover { filter: brightness(1.1); }
+  .shd-gctrl-btn:active { filter: brightness(0.9); transform: scale(0.98); }
+  .shd-gctrl-btn.shd-open  { background: linear-gradient(135deg, #16a34a, #22c55e); color: #fff; }
+  .shd-gctrl-btn.shd-stop  { background: rgba(220,38,38,0.7); color: #fff; }
+  .shd-gctrl-btn.shd-close { background: linear-gradient(135deg, #dc2626, #ef4444); color: #fff; }
+  .shd-garage-footer {
+    display: flex; justify-content: space-between;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--shd-border);
+    font-size: 11px;
+  }
+  .shd-garage-footer .shd-gf-label { color: var(--shd-text-muted); }
+  .shd-garage-footer .shd-gf-value { color: var(--shd-accent-green); font-weight: 700; }
+  .shd-garage-footer .shd-gf-value.shd-open  { color: var(--shd-accent-gold); }
+
+  /* ════════ POWER MODAL ════════ */
+  .shd-pmod-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .shd-pmod-stat {
+    background: rgba(255,255,255,0.04);
+    border-radius: 10px;
+    padding: 10px;
+    text-align: center;
+  }
+  .shd-pmod-stat-lbl {
+    font-size: 9px; color: var(--shd-text-muted);
+    text-transform: uppercase;
+  }
+  .shd-pmod-stat-val {
+    font-size: 22px; font-weight: 300;
+    color: #fff; margin-top: 4px;
+    font-family: var(--shd-mono);
+  }
+  .shd-pmod-stat-unit { font-size: 10px; color: var(--shd-text-muted); }
+  .shd-pmod-chart-title {
+    font-size: 11px; color: var(--shd-text-muted);
+    margin: 14px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+  }
+  .shd-pmod-chart {
+    display: flex; align-items: flex-end;
+    gap: 6px;
+    height: 200px;
+    padding: 14px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 14px;
+    margin-bottom: 14px;
+  }
+  .shd-pmod-bar {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; gap: 4px;
+    min-width: 0;
+  }
+  .shd-pmod-bar-fill {
+    width: 100%;
+    background: linear-gradient(180deg, var(--shd-accent-gold), rgba(245,158,11,0.4));
+    border-radius: 6px 6px 0 0;
+    transition: height 0.4s;
+    min-height: 2px;
+  }
+  .shd-pmod-bar-val {
+    font-size: 10px; font-weight: 700;
+    color: #fff;
+    font-family: var(--shd-mono);
+  }
+  .shd-pmod-bar-lbl {
+    font-size: 9px; color: var(--shd-text-muted);
+  }
+  .shd-pmod-loading,
+  .shd-pmod-error {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--shd-text-muted);
+    font-size: 12px;
+  }
+  .shd-pmod-spinner {
+    width: 30px; height: 30px;
+    border: 3px solid rgba(255,255,255,0.1);
+    border-top-color: var(--shd-accent-gold);
+    border-radius: 50%;
+    animation: shd-spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+  }
+  @keyframes shd-spin {
+    from { transform: rotate(0deg); } to { transform: rotate(360deg); }
+  }
+
+  /* Mobile adjustments for modals + rooms */
+  .shd-root.shd-bp-sm .shd-rooms-grid { grid-template-columns: repeat(3, 1fr); }
+  .shd-root.shd-bp-xs .shd-rooms-grid { grid-template-columns: repeat(2, 1fr); }
+  .shd-root.shd-bp-xs .shd-modal { padding: 16px; max-height: 95vh; }
+  .shd-root.shd-bp-xs .shd-garage-grid { grid-template-columns: 1fr; }
+  .shd-root.shd-bp-xs .shd-garage-ctrls { flex-direction: row; }
+  .shd-root.shd-bp-xs .shd-garage-ctrls .shd-gctrl-btn { flex: 1; padding: 10px; font-size: 11px; }
+  .shd-root.shd-bp-xs .shd-garage-ctrls .shd-gctrl-label { display: none; }
+  .shd-root.shd-bp-xs .shd-pmod-chart { height: 140px; }
+
   /* ════════ MOWER SVG ANIMATIONS (port from multi-panel) ════════ */
   @keyframes shd-mow-spin      { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   @keyframes shd-mow-spin-fast { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -1409,6 +1848,7 @@ class SmartHomeDashboardCard extends HTMLElement {
     }
 
     if (this._built) {
+      this._lastRoomsSig = null; // config may have changed rooms
       this._render();
     }
   }
@@ -1460,11 +1900,171 @@ class SmartHomeDashboardCard extends HTMLElement {
           ${this._renderTopbar()}
           ${this._renderMain()}
         </div>
+        ${this._renderModals()}
       </div>
     `;
     this._attachListeners();
     this._startResizeObserver();
     this._updateClock();
+    // Initial rooms render (data comes from current floor)
+    this._renderRooms();
+  }
+
+  _renderModals() {
+    return `
+      <!-- Room modal -->
+      <div class="shd-modal-overlay" id="shd-room-modal" data-shd-modal="room">
+        <div class="shd-modal">
+          <button class="shd-modal-close" data-shd-close="room">✕</button>
+          <div class="shd-modal-header">
+            <div class="shd-modal-icon" id="shd-rmod-icon">🏠</div>
+            <div>
+              <div class="shd-modal-subtitle" id="shd-rmod-floor">House</div>
+              <div class="shd-modal-title" id="shd-rmod-name">Room</div>
+            </div>
+          </div>
+          <div id="shd-rmod-body"></div>
+        </div>
+      </div>
+
+      <!-- Garage modal -->
+      <div class="shd-modal-overlay" id="shd-gate-modal" data-shd-modal="gate">
+        <div class="shd-modal shd-wide">
+          <button class="shd-modal-close" data-shd-close="gate">✕</button>
+          <div class="shd-modal-header">
+            <div class="shd-modal-icon">🏠</div>
+            <div>
+              <div class="shd-modal-subtitle">House</div>
+              <div class="shd-modal-title">Garage Door</div>
+            </div>
+          </div>
+          <div class="shd-garage-grid">
+            <div class="shd-garage-scene">${this._garageSceneSVG()}</div>
+            <div class="shd-garage-ctrls">
+              <div class="shd-gctrl-label">Control</div>
+              <button class="shd-gctrl-btn shd-open"  data-shd-gate="open">↑ Open</button>
+              <button class="shd-gctrl-btn shd-stop"  data-shd-gate="stop">■ Stop</button>
+              <button class="shd-gctrl-btn shd-close" data-shd-gate="close">↓ Close</button>
+            </div>
+          </div>
+          <div class="shd-garage-footer">
+            <span><span class="shd-gf-label">Status:</span> <span class="shd-gf-value" id="shd-gate-modal-status">—</span></span>
+            <span><span class="shd-gf-label">Last change:</span> <span style="color:var(--shd-text-muted);" id="shd-gate-modal-time">—</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Power modal -->
+      <div class="shd-modal-overlay" id="shd-power-modal" data-shd-modal="power">
+        <div class="shd-modal shd-wide">
+          <button class="shd-modal-close" data-shd-close="power">✕</button>
+          <div class="shd-modal-header">
+            <div class="shd-modal-icon">⚡</div>
+            <div>
+              <div class="shd-modal-subtitle">Energy Monitor</div>
+              <div class="shd-modal-title">House Power Consumption</div>
+            </div>
+          </div>
+          <div class="shd-pmod-stats">
+            <div class="shd-pmod-stat">
+              <div class="shd-pmod-stat-lbl">Now</div>
+              <div class="shd-pmod-stat-val" id="shd-pmod-now">—</div>
+              <div class="shd-pmod-stat-unit" id="shd-pmod-now-unit">kW</div>
+            </div>
+            <div class="shd-pmod-stat">
+              <div class="shd-pmod-stat-lbl">Today</div>
+              <div class="shd-pmod-stat-val" id="shd-pmod-today">—</div>
+              <div class="shd-pmod-stat-unit">kWh</div>
+            </div>
+            <div class="shd-pmod-stat">
+              <div class="shd-pmod-stat-lbl">This month</div>
+              <div class="shd-pmod-stat-val" id="shd-pmod-month">—</div>
+              <div class="shd-pmod-stat-unit">kWh</div>
+            </div>
+          </div>
+          <div class="shd-pmod-chart-title">📅 Last 12 months</div>
+          <div id="shd-pmod-chart-wrap">
+            <div class="shd-pmod-loading">
+              <div class="shd-pmod-spinner"></div>
+              Loading monthly history…
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  _garageSceneSVG() {
+    // The detailed RAL 7016 garage scene from preview v3
+    return `
+      <svg viewBox="0 0 360 240" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+        <rect x="0" y="0" width="360" height="180" fill="#1a2845"/>
+        <rect x="20" y="60" width="320" height="6" fill="#c8c8c8"/>
+        <rect x="30" y="20" width="140" height="40" fill="rgba(80,100,140,0.4)" stroke="#aaa" stroke-width="0.5"/>
+        <rect x="190" y="20" width="140" height="40" fill="rgba(80,100,140,0.4)" stroke="#aaa" stroke-width="0.5"/>
+        <path d="M 35 22 L 60 22 L 50 58 L 35 58 Z" fill="rgba(255,255,255,0.05)"/>
+        <path d="M 195 22 L 220 22 L 210 58 L 195 58 Z" fill="rgba(255,255,255,0.05)"/>
+        <rect x="28" y="14" width="2" height="46" fill="#ccc"/>
+        <rect x="170" y="14" width="2" height="46" fill="#ccc"/>
+        <rect x="180" y="14" width="2" height="46" fill="#ccc"/>
+        <rect x="330" y="14" width="2" height="46" fill="#ccc"/>
+        <rect x="20" y="12" width="320" height="3" fill="#ddd"/>
+        <rect x="166" y="58" width="28" height="22" fill="#1a1a1a"/>
+        <rect x="172" y="62" width="16" height="10" fill="#fff" stroke="#999" stroke-width="0.3"/>
+        <ellipse cx="180" cy="84" rx="14" ry="3" fill="none" stroke="#f59e0b" stroke-width="2.5"/>
+        <path d="M 168 84 L 172 102 M 174 84 L 176 102 M 180 84 L 180 104 M 186 84 L 184 102 M 192 84 L 188 102" stroke="#fff" stroke-width="0.5" opacity="0.7" fill="none"/>
+        <path d="M 170 92 L 190 92 M 172 100 L 188 100" stroke="#fff" stroke-width="0.4" opacity="0.5" fill="none"/>
+        <rect x="0" y="65" width="360" height="170" fill="#e8e6df"/>
+        <line x1="0" y1="75" x2="360" y2="75" stroke="#d4d2cb" stroke-width="0.3"/>
+        <line x1="0" y1="95" x2="360" y2="95" stroke="#d4d2cb" stroke-width="0.3"/>
+        <line x1="0" y1="115" x2="360" y2="115" stroke="#d4d2cb" stroke-width="0.3"/>
+        <rect x="40" y="90" width="14" height="130" fill="#dddbd4"/>
+        <rect x="306" y="90" width="14" height="130" fill="#dddbd4"/>
+        <rect x="52" y="90" width="2" height="130" fill="rgba(0,0,0,0.06)"/>
+        <rect x="306" y="90" width="2" height="130" fill="rgba(0,0,0,0.06)"/>
+        <rect x="54" y="90" width="252" height="125" fill="#c8c6bf"/>
+        <rect x="60" y="94" width="240" height="118" fill="#0a0a0a"/>
+        <g id="shd-garage-door-panels">
+          <rect x="60" y="94" width="240" height="22" fill="#383e42" stroke="#2a2e30" stroke-width="0.5"/>
+          <rect x="60" y="116" width="240" height="22" fill="#3f4549" stroke="#2a2e30" stroke-width="0.5"/>
+          <rect x="60" y="138" width="240" height="22" fill="#383e42" stroke="#2a2e30" stroke-width="0.5"/>
+          <rect x="60" y="160" width="240" height="22" fill="#3f4549" stroke="#2a2e30" stroke-width="0.5"/>
+          <rect x="60" y="182" width="240" height="22" fill="#383e42" stroke="#2a2e30" stroke-width="0.5"/>
+          <line x1="60" y1="95" x2="300" y2="95" stroke="rgba(255,255,255,0.06)"/>
+          <line x1="60" y1="117" x2="300" y2="117" stroke="rgba(255,255,255,0.06)"/>
+          <line x1="60" y1="139" x2="300" y2="139" stroke="rgba(255,255,255,0.06)"/>
+          <line x1="60" y1="161" x2="300" y2="161" stroke="rgba(255,255,255,0.06)"/>
+          <line x1="60" y1="183" x2="300" y2="183" stroke="rgba(255,255,255,0.06)"/>
+          <circle cx="180" cy="148" r="4" fill="#666" stroke="rgba(255,255,255,0.2)" stroke-width="0.5"/>
+          <circle cx="180" cy="148" r="1.5" fill="#333"/>
+        </g>
+        <circle cx="68" cy="100" r="3" fill="#10b981">
+          <animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/>
+        </circle>
+        <rect x="0" y="215" width="360" height="25" fill="#2a2a2a"/>
+        <g fill="#444">
+          <rect x="0"   y="215" width="20" height="12"/>
+          <rect x="40"  y="215" width="20" height="12"/>
+          <rect x="80"  y="215" width="20" height="12"/>
+          <rect x="120" y="215" width="20" height="12"/>
+          <rect x="160" y="215" width="20" height="12"/>
+          <rect x="200" y="215" width="20" height="12"/>
+          <rect x="240" y="215" width="20" height="12"/>
+          <rect x="280" y="215" width="20" height="12"/>
+          <rect x="320" y="215" width="20" height="12"/>
+          <rect x="20"  y="227" width="20" height="12"/>
+          <rect x="60"  y="227" width="20" height="12"/>
+          <rect x="100" y="227" width="20" height="12"/>
+          <rect x="140" y="227" width="20" height="12"/>
+          <rect x="180" y="227" width="20" height="12"/>
+          <rect x="220" y="227" width="20" height="12"/>
+          <rect x="260" y="227" width="20" height="12"/>
+          <rect x="300" y="227" width="20" height="12"/>
+          <rect x="340" y="227" width="20" height="12"/>
+        </g>
+        <text x="68" y="208" font-size="9" font-family="Outfit,sans-serif" fill="rgba(255,255,255,0.5)" font-weight="600">STATUS: CLOSED</text>
+      </svg>
+    `;
   }
 
   _renderTopbar() {
@@ -1515,19 +2115,15 @@ class SmartHomeDashboardCard extends HTMLElement {
           ${this._renderSaltCard()}
         </div>
 
-        <!-- CENTER COLUMN: rooms grid placeholder (Phase 3) -->
+        <!-- CENTER COLUMN: rooms grid -->
         <div class="shd-col">
-          <div class="shd-card shd-rooms-grid-placeholder">
-            <div class="shd-section-label">
+          <div class="shd-card" style="flex:1;">
+            <div class="shd-rooms-header">
               <div class="shd-section-dot" style="background:var(--shd-accent-gold);"></div>
-              Rooms — <span style="color:#fff;font-weight:700;text-transform:none;letter-spacing:0;">${this._esc(floorLabel)}</span>
+              <span>Rooms — </span><span class="shd-rh-floor">${this._esc(floorLabel)}</span>
+              <span class="shd-rh-count" id="shd-rooms-count">0 rooms</span>
             </div>
-            <div class="floor-name">${this._esc(floorLabel)}</div>
-            <div class="shd-placeholder-text">
-              <strong>Rooms grid</strong><br>
-              Adaptive cards with climate + sensors + lights<br>
-              <em style="opacity:0.6">coming in Phase 3</em>
-            </div>
+            <div class="shd-rooms-grid" id="shd-rooms-grid"></div>
           </div>
         </div>
 
@@ -1864,6 +2460,7 @@ class SmartHomeDashboardCard extends HTMLElement {
         const id = tab.dataset.floor;
         if (id && id !== this._currentFloor) {
           this._currentFloor = id;
+          this._lastRoomsSig = null; // force re-render
           this._render();
         }
       });
@@ -1884,13 +2481,31 @@ class SmartHomeDashboardCard extends HTMLElement {
       btn.addEventListener('click', () => this._mowerAction(btn.dataset.mowerAction));
     });
 
-    // Garage row click (modal placeholder for Phase 3)
+    // Garage row click → open garage modal
     const gateRow = root.getElementById('shd-gate-row');
-    if (gateRow) gateRow.addEventListener('click', () => this._garageClick());
+    if (gateRow) gateRow.addEventListener('click', () => this._openGateModal());
 
-    // Power click (modal placeholder for Phase 3)
+    // Power click → open power modal
     const powerCard = root.getElementById('shd-power-card');
-    if (powerCard) powerCard.addEventListener('click', () => this._powerClick());
+    if (powerCard) powerCard.addEventListener('click', () => this._openPowerModal());
+
+    // Modal close buttons
+    root.querySelectorAll('[data-shd-close]').forEach(btn => {
+      btn.addEventListener('click', () => this._closeModal(btn.dataset.shdClose));
+    });
+    // Click outside modal content to close
+    root.querySelectorAll('.shd-modal-overlay').forEach(ov => {
+      ov.addEventListener('click', (e) => {
+        if (e.target === ov) ov.classList.remove('shd-show');
+      });
+    });
+    // Gate control buttons inside garage modal
+    root.querySelectorAll('[data-shd-gate]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._gateAction(btn.dataset.shdGate);
+      });
+    });
 
     // Initialize the inlined Samsung remote (if TV configured)
     this._initRemote();
@@ -1937,29 +2552,6 @@ class SmartHomeDashboardCard extends HTMLElement {
     if (svc) this._hass.callService('lawn_mower', svc, { entity_id: eid });
   }
 
-  _garageClick() {
-    // Phase 3 will show the animated garage modal. For now, toggle the cover.
-    if (!this._hass) return;
-    const cover = this._config.garage && this._config.garage.cover;
-    if (!cover) return;
-    const state = getState(this._hass, cover);
-    const svc = (state === 'open' || state === 'opening') ? 'close_cover'
-              : (state === 'closed' || state === 'closing') ? 'open_cover'
-              : 'toggle';
-    this._hass.callService('cover', svc, { entity_id: cover });
-  }
-
-  _powerClick() {
-    // Phase 3 will show the monthly history modal.
-    // For now, fire a more-info on the power sensor as the most useful fallback.
-    const p = this._config.power || {};
-    const eid = p.energy_sensor || p.power_sensor;
-    if (!eid) return;
-    this.dispatchEvent(new CustomEvent('hass-more-info', {
-      bubbles: true, composed: true, detail: { entityId: eid },
-    }));
-  }
-
   _initRemote() {
     const el = this.shadowRoot.getElementById('shd-tv-remote');
     if (!el) return;
@@ -1993,6 +2585,13 @@ class SmartHomeDashboardCard extends HTMLElement {
     this._updateSurveillance();
     this._updateMower();
     this._updatePower();
+    // Rooms: re-render the grid contents (cheap — just innerHTML for the small grid).
+    // This keeps sensor dots / temp / lights-on state in sync without re-rendering
+    // the entire shadow tree.
+    this._renderRooms();
+    // If garage modal is open, keep its status in sync
+    const gm = this.shadowRoot.getElementById('shd-gate-modal');
+    if (gm && gm.classList.contains('shd-show')) this._updateGarageModal();
   }
 
   /* — Clock + sun — */
@@ -2378,6 +2977,448 @@ class SmartHomeDashboardCard extends HTMLElement {
     timeEl.textContent = `${hh}:${mm}`;
   }
 
+  /* ════════════════════════════════════════════════════════════════
+     PHASE 3 — ROOMS GRID + ROOM MODAL
+     ════════════════════════════════════════════════════════════════ */
+
+  _normalizeRoomEntities(room) {
+    if (!room) return [];
+    const eids = Array.isArray(room.lights) ? room.lights : [];
+    return eids.map(e => (typeof e === 'string' ? e : (e && e.entity) || '')).filter(Boolean);
+  }
+
+  // Decide which "light" entities count as on (works for light + switch domains)
+  _roomLightsOn(room) {
+    if (!this._hass) return 0;
+    const eids = this._normalizeRoomEntities(room);
+    let count = 0;
+    eids.forEach(eid => {
+      const s = getState(this._hass, eid);
+      if (s === 'on') count++;
+    });
+    return count;
+  }
+
+  _roomMatchesLabels(room) {
+    const lf = this._config.labels;
+    if (!Array.isArray(lf) || lf.length === 0) return true;
+    const rl = room && room.labels;
+    if (!Array.isArray(rl) || rl.length === 0) return false;
+    return lf.some(l => rl.includes(l));
+  }
+
+  _renderRooms() {
+    if (!this.shadowRoot) return;
+    const grid = this.shadowRoot.getElementById('shd-rooms-grid');
+    const countEl = this.shadowRoot.getElementById('shd-rooms-count');
+    if (!grid) return;
+
+    const floors = this._config.floors || [];
+    const currentFloor = floors.find(f => f.id === this._currentFloor) || floors[0];
+    if (!currentFloor) {
+      grid.innerHTML = '<div class="shd-rooms-empty"><div class="shd-re-icon">📭</div>No floors configured</div>';
+      if (countEl) countEl.textContent = '0 rooms';
+      return;
+    }
+
+    const rooms = (currentFloor.rooms || []).filter(r => this._roomMatchesLabels(r));
+
+    if (countEl) countEl.textContent = rooms.length + (rooms.length === 1 ? ' room' : ' rooms');
+
+    if (rooms.length === 0) {
+      grid.innerHTML = `
+        <div class="shd-rooms-empty">
+          <div class="shd-re-icon">📭</div>
+          No rooms configured for this floor
+          <div class="shd-re-hint">Add rooms in the editor → Floors &amp; Rooms section</div>
+        </div>
+      `;
+      return;
+    }
+
+    // Build a signature of state values for all entities referenced by these rooms.
+    // If nothing changed since last render, skip the innerHTML rewrite to keep
+    // the DOM stable and the grid flicker-free.
+    const sig = this._roomsSignature(rooms);
+    if (this._lastRoomsSig === sig) return;
+    this._lastRoomsSig = sig;
+
+    grid.innerHTML = rooms.map((r, idx) => this._buildRoomCardHTML(r, idx)).join('');
+
+    // Attach click handlers
+    grid.querySelectorAll('[data-shd-room-idx]').forEach(el => {
+      el.addEventListener('click', () => {
+        const i = parseInt(el.dataset.shdRoomIdx, 10);
+        this._openRoomModal(rooms[i], currentFloor);
+      });
+    });
+  }
+
+  _roomsSignature(rooms) {
+    if (!this._hass || !rooms) return String(this._currentFloor || '');
+    const parts = [this._currentFloor || ''];
+    rooms.forEach(r => {
+      const ids = [r.temp_sensor, r.hum_sensor, r.power_sensor, r.presence_sensor, r.door_sensor, r.motion_sensor]
+        .concat(this._normalizeRoomEntities(r))
+        .filter(Boolean);
+      ids.forEach(id => {
+        const s = getState(this._hass, id);
+        parts.push(id + '=' + (s == null ? '' : s));
+      });
+      parts.push('|' + (r.name || '') + '/' + (r.icon || ''));
+    });
+    return parts.join(';');
+  }
+
+  _buildRoomCardHTML(room, idx) {
+    const hass = this._hass;
+    const sens = {};
+    if (room.presence_sensor) sens.presence = getState(hass, room.presence_sensor) === 'on';
+    if (room.door_sensor)     sens.door     = getState(hass, room.door_sensor) === 'on';
+    if (room.motion_sensor)   sens.motion   = getState(hass, room.motion_sensor) === 'on';
+
+    const temp = room.temp_sensor ? num(getState(hass, room.temp_sensor)) : null;
+    const hum  = room.hum_sensor  ? num(getState(hass, room.hum_sensor))  : null;
+    const power = room.power_sensor ? powerToWatts(hass, room.power_sensor) : null;
+
+    const lightsOn = this._roomLightsOn(room);
+    const lightsConfigured = this._normalizeRoomEntities(room).length;
+
+    let html = '<div class="shd-room' + (lightsOn > 0 ? ' shd-on' : '') + '" data-shd-room-idx="' + idx + '">';
+    html += '<div class="shd-room-head">';
+    html += '<span class="shd-room-icon">' + this._esc(room.icon || '🚪') + '</span>';
+    html += '<span class="shd-room-name">' + this._esc(room.name || 'Room') + '</span>';
+    if (lightsOn > 0) {
+      html += '<span class="shd-room-on-pill">💡 ' + lightsOn + '</span>';
+    }
+    html += '</div>';
+
+    // Metrics row — only show if configured AND has data
+    const hasTemp = temp !== null;
+    const hasHum = hum !== null;
+    const hasPower = power !== null;
+    if (hasTemp || hasHum || hasPower) {
+      html += '<div class="shd-room-metrics">';
+      if (hasTemp) html += '<div class="shd-room-metric shd-rm-temp"><div class="shd-rm-lbl">🌡 Temp</div><div class="shd-rm-val shd-rm-big">' + (Math.round(temp * 10) / 10) + '°</div></div>';
+      if (hasHum)  html += '<div class="shd-room-metric shd-rm-hum"><div class="shd-rm-lbl">💧 Hum</div><div class="shd-rm-val">' + Math.round(hum) + '%</div></div>';
+      if (hasPower) html += '<div class="shd-room-metric shd-rm-power"><div class="shd-rm-lbl">⚡ Power</div><div class="shd-rm-val">' + formatPower(power) + '</div></div>';
+      html += '</div>';
+    }
+
+    // Sensor chips — only show configured sensors
+    const chips = [];
+    if (sens.presence !== undefined) {
+      chips.push('<div class="shd-r-sensor ' + (sens.presence ? 'shd-rs-ok' : '') + '">' +
+        '<div class="shd-rs-dot" style="background:' + (sens.presence ? '#10b981' : 'rgba(255,255,255,0.2)') + ';' +
+        (sens.presence ? 'box-shadow:0 0 5px rgba(16,185,129,0.7);' : '') + '"></div>' +
+        '🧍 ' + (sens.presence ? 'Present' : 'Empty') +
+        '</div>');
+    }
+    if (sens.door !== undefined) {
+      chips.push('<div class="shd-r-sensor ' + (sens.door ? 'shd-rs-alert' : '') + '">' +
+        '<div class="shd-rs-dot" style="background:' + (sens.door ? '#ef4444' : '#3b82f6') + ';' +
+        'box-shadow:0 0 5px ' + (sens.door ? 'rgba(239,68,68,0.7)' : 'rgba(59,130,246,0.4)') + ';"></div>' +
+        '🚪 ' + (sens.door ? 'Open' : 'Closed') +
+        '</div>');
+    }
+    if (sens.motion !== undefined) {
+      chips.push('<div class="shd-r-sensor ' + (sens.motion ? 'shd-rs-warn' : '') + '">' +
+        '<div class="shd-rs-dot" style="background:' + (sens.motion ? '#f59e0b' : 'rgba(255,255,255,0.2)') + ';' +
+        (sens.motion ? 'box-shadow:0 0 5px rgba(245,158,11,0.7);' : '') + '"></div>' +
+        '👁 ' + (sens.motion ? 'Motion' : 'Clear') +
+        '</div>');
+    }
+    if (chips.length) html += '<div class="shd-room-sensors">' + chips.join('') + '</div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  _openRoomModal(room, floor) {
+    if (!room) return;
+    this._activeRoom = room;
+    const m = this.shadowRoot.getElementById('shd-room-modal');
+    if (!m) return;
+    this.shadowRoot.getElementById('shd-rmod-icon').textContent = room.icon || '🚪';
+    this.shadowRoot.getElementById('shd-rmod-name').textContent = room.name || 'Room';
+    this.shadowRoot.getElementById('shd-rmod-floor').textContent = 'House — ' + (floor ? floor.label : '');
+    this.shadowRoot.getElementById('shd-rmod-body').innerHTML = this._buildRoomModalBody(room);
+    // Wire light toggles
+    this.shadowRoot.querySelectorAll('[data-shd-light-toggle]').forEach(row => {
+      row.addEventListener('click', () => this._toggleLight(row.dataset.shdLightToggle));
+    });
+    m.classList.add('shd-show');
+  }
+
+  _buildRoomModalBody(room) {
+    const hass = this._hass;
+    const sens = {};
+    if (room.presence_sensor) sens.presence = getState(hass, room.presence_sensor) === 'on';
+    if (room.door_sensor)     sens.door     = getState(hass, room.door_sensor) === 'on';
+    if (room.motion_sensor)   sens.motion   = getState(hass, room.motion_sensor) === 'on';
+    const temp = room.temp_sensor ? num(getState(hass, room.temp_sensor)) : null;
+    const hum  = room.hum_sensor  ? num(getState(hass, room.hum_sensor))  : null;
+    const power = room.power_sensor ? powerToWatts(hass, room.power_sensor) : null;
+    const lightEids = this._normalizeRoomEntities(room);
+    const extra = Array.isArray(room.extra_sensors) ? room.extra_sensors : [];
+
+    let html = '';
+
+    // Climate strip — only if there's something to show
+    const metrics = [];
+    if (temp !== null) metrics.push({ cls: 'shd-rmm-temp', lbl: '🌡 Temp', val: (Math.round(temp * 10) / 10) + '°', small: false });
+    if (hum !== null)  metrics.push({ cls: 'shd-rmm-hum', lbl: '💧 Humidity', val: Math.round(hum) + '%', small: false });
+    if (sens.presence !== undefined) metrics.push({ cls: 'shd-rmm-presence', lbl: '🧍 Presence', val: sens.presence ? 'Present' : 'Empty', small: true, color: sens.presence ? '#10b981' : 'rgba(255,255,255,0.5)' });
+    if (sens.motion !== undefined)   metrics.push({ cls: 'shd-rmm-motion', lbl: '👁 Motion', val: sens.motion ? 'Active' : 'Clear', small: true, color: sens.motion ? '#f59e0b' : 'rgba(255,255,255,0.5)' });
+    if (sens.door !== undefined)     metrics.push({ cls: 'shd-rmm-door', lbl: '🚪 Door', val: sens.door ? 'Open' : 'Closed', small: true, color: sens.door ? '#ef4444' : '#3b82f6' });
+    if (power !== null) metrics.push({ cls: 'shd-rmm-power', lbl: '⚡ Power', val: formatPower(power), small: false });
+
+    if (metrics.length > 0) {
+      html += '<div class="shd-rmod-bar">';
+      html += '<div class="shd-rmod-bar-title">Climate &amp; Sensors</div>';
+      html += '<div class="shd-rmod-metrics">';
+      metrics.forEach(m => {
+        html += '<div class="shd-rmod-metric ' + m.cls + '">';
+        html += '<div class="shd-rmod-lbl">' + m.lbl + '</div>';
+        html += '<div class="shd-rmod-val' + (m.small ? ' shd-rmm-small' : '') + '"' + (m.color ? ' style="color:' + m.color + ';"' : '') + '>' + this._esc(m.val) + '</div>';
+        html += '</div>';
+      });
+      html += '</div></div>';
+    }
+
+    // Lights / switches — only if configured
+    if (lightEids.length > 0) {
+      const onCount = this._roomLightsOn(room);
+      html += '<div class="shd-rmod-section">';
+      html += '<div class="shd-rmod-section-title">💡 Lights &amp; Switches <span class="shd-rmod-count">' + onCount + ' of ' + lightEids.length + ' on</span></div>';
+      lightEids.forEach(eid => {
+        const o = getStateObj(hass, eid);
+        const on = (o && o.state === 'on');
+        const fn = (o && o.attributes && o.attributes.friendly_name) || eid;
+        html += '<div class="shd-light-row' + (on ? ' shd-light-on' : '') + '" data-shd-light-toggle="' + this._esc(eid) + '">';
+        html += '<div class="shd-light-dot' + (on ? ' shd-on' : '') + '"></div>';
+        html += '<div class="shd-light-name">' + this._esc(fn) + '</div>';
+        html += '<div class="shd-light-badge ' + (on ? 'shd-on' : 'shd-off') + '">' + (on ? 'On' : 'Off') + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Extra sensors — only if configured
+    if (extra.length > 0) {
+      html += '<div class="shd-rmod-section">';
+      html += '<div class="shd-rmod-section-title">📡 Additional Sensors</div>';
+      html += '<div class="shd-rmod-sensors">';
+      extra.forEach(s => {
+        const eid = (typeof s === 'string') ? s : (s.entity || '');
+        if (!eid) return;
+        const o = getStateObj(hass, eid);
+        const v = o ? o.state : '—';
+        const u = (o && o.attributes && o.attributes.unit_of_measurement) || '';
+        const fn = (o && o.attributes && o.attributes.friendly_name) || eid;
+        const icon = (o && o.attributes && o.attributes.icon) ? '' : '📊';
+        html += '<div class="shd-rmod-sens">';
+        html += '<div class="shd-rmod-sens-icon">' + icon + '</div>';
+        html += '<div class="shd-rmod-sens-info">';
+        html += '<div class="shd-rmod-sens-lbl">' + this._esc(fn) + '</div>';
+        html += '<div class="shd-rmod-sens-val">' + this._esc(v) + (u ? ' ' + this._esc(u) : '') + '</div>';
+        html += '</div></div>';
+      });
+      html += '</div></div>';
+    }
+
+    if (!html) {
+      html = '<div style="text-align:center;padding:30px 20px;color:var(--shd-text-muted);font-size:12px;">No data to show — configure sensors and lights for this room in the editor.</div>';
+    }
+
+    return html;
+  }
+
+  _toggleLight(entityId) {
+    if (!this._hass || !entityId) return;
+    const domain = entityId.split('.')[0];
+    if (domain !== 'light' && domain !== 'switch') return;
+    this._hass.callService(domain, 'toggle', { entity_id: entityId });
+    // Re-render the modal body once state propagates (small delay)
+    setTimeout(() => {
+      if (this._activeRoom) {
+        const body = this.shadowRoot.getElementById('shd-rmod-body');
+        if (body) {
+          body.innerHTML = this._buildRoomModalBody(this._activeRoom);
+          this.shadowRoot.querySelectorAll('[data-shd-light-toggle]').forEach(row => {
+            row.addEventListener('click', () => this._toggleLight(row.dataset.shdLightToggle));
+          });
+        }
+      }
+    }, 250);
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     PHASE 3 — GARAGE MODAL
+     ════════════════════════════════════════════════════════════════ */
+
+  _openGateModal() {
+    const m = this.shadowRoot.getElementById('shd-gate-modal');
+    if (!m) return;
+    m.classList.add('shd-show');
+    this._updateGarageModal();
+  }
+
+  _updateGarageModal() {
+    const cover = this._config.garage && this._config.garage.cover;
+    const contact = this._config.garage && this._config.garage.contact;
+    const eid = cover || contact;
+    if (!eid) return;
+    const o = getStateObj(this._hass, eid);
+    if (!o) return;
+    let label = 'UNKNOWN', isOpen = false;
+    if (cover) {
+      label = (o.state || 'unknown').toUpperCase();
+      isOpen = (o.state === 'open' || o.state === 'opening');
+    } else if (contact) {
+      isOpen = (o.state === 'on');
+      label = isOpen ? 'OPEN' : 'CLOSED';
+    }
+    const sEl = this.shadowRoot.getElementById('shd-gate-modal-status');
+    const tEl = this.shadowRoot.getElementById('shd-gate-modal-time');
+    if (sEl) {
+      sEl.textContent = label;
+      sEl.classList.toggle('shd-open', isOpen);
+    }
+    if (tEl) tEl.textContent = humanizeTimeAgo(o.last_changed);
+    // Update SVG status text
+    const svg = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+    if (svg) svg.textContent = 'STATUS: ' + label;
+  }
+
+  _gateAction(action) {
+    if (!this._hass) return;
+    const cover = this._config.garage && this._config.garage.cover;
+    if (!cover) return;
+    const svc = action === 'open' ? 'open_cover' : action === 'close' ? 'close_cover' : 'stop_cover';
+    this._hass.callService('cover', svc, { entity_id: cover });
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     PHASE 3 — POWER MONTHLY MODAL
+     ════════════════════════════════════════════════════════════════ */
+
+  _openPowerModal() {
+    const m = this.shadowRoot.getElementById('shd-power-modal');
+    if (!m) return;
+    m.classList.add('shd-show');
+
+    // Sync current values
+    const cfg = this._config.power || {};
+    const watts = powerToWatts(this._hass, cfg.power_sensor);
+    const nowEl = this.shadowRoot.getElementById('shd-pmod-now');
+    const nowUnit = this.shadowRoot.getElementById('shd-pmod-now-unit');
+    if (nowEl && nowUnit) {
+      if (watts === null) { nowEl.textContent = '—'; nowUnit.textContent = ''; }
+      else if (Math.abs(watts) >= 1000) { nowEl.textContent = (watts / 1000).toFixed(1); nowUnit.textContent = 'kW'; }
+      else { nowEl.textContent = Math.round(watts); nowUnit.textContent = 'W'; }
+    }
+    const todayEl = this.shadowRoot.getElementById('shd-pmod-today');
+    const monthEl = this.shadowRoot.getElementById('shd-pmod-month');
+    if (todayEl) todayEl.textContent = (this._energyData && this._energyData.today != null) ? this._energyData.today.toFixed(1) : '—';
+    if (monthEl) monthEl.textContent = (this._energyData && this._energyData.month != null) ? Math.round(this._energyData.month) : '—';
+
+    // Load chart
+    this._loadMonthlyChart();
+  }
+
+  async _loadMonthlyChart() {
+    const wrap = this.shadowRoot.getElementById('shd-pmod-chart-wrap');
+    if (!wrap) return;
+    const cfg = this._config.power || {};
+    if (!cfg.energy_sensor) {
+      wrap.innerHTML = '<div class="shd-pmod-error">Configure <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;color:var(--shd-accent-gold);">power.energy_sensor</code> to see the monthly chart.</div>';
+      return;
+    }
+    // Use cached values if available within the last hour
+    if (this._monthlyChartData && this._monthlyChartCacheAt && (Date.now() - this._monthlyChartCacheAt) < 60 * 60 * 1000) {
+      this._renderMonthlyChart(this._monthlyChartData);
+      return;
+    }
+    // Show loader while fetching
+    wrap.innerHTML = '<div class="shd-pmod-loading"><div class="shd-pmod-spinner"></div>Loading monthly history…</div>';
+
+    try {
+      const data = await this._fetchMonthlyHistory(cfg.energy_sensor);
+      this._monthlyChartData = data;
+      this._monthlyChartCacheAt = Date.now();
+      this._renderMonthlyChart(data);
+    } catch (e) {
+      wrap.innerHTML = '<div class="shd-pmod-error">Failed to load history.<br><span style="font-size:10px;opacity:0.6;">' + this._esc(e && e.message || 'unknown error') + '</span></div>';
+    }
+  }
+
+  async _fetchMonthlyHistory(entityId) {
+    if (!this._hass || !this._hass.callApi) throw new Error('hass not ready');
+    const now = new Date();
+    // Build 13 boundary timestamps (start-of-month for the next 12+ months)
+    const boundaries = [];
+    for (let i = 12; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      boundaries.push(d);
+    }
+    boundaries.push(now); // current value
+
+    const fetchAt = async (date) => {
+      try {
+        const start = date.toISOString();
+        const end = new Date(date.getTime() + 60 * 60 * 1000).toISOString();
+        const url = `history/period/${start}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${encodeURIComponent(end)}&minimal_response`;
+        const result = await this._hass.callApi('GET', url);
+        if (Array.isArray(result) && result.length > 0 && result[0].length > 0) {
+          const first = result[0][0];
+          const v = num(first.s !== undefined ? first.s : first.state);
+          return v;
+        }
+      } catch (_) { /* ignore */ }
+      return null;
+    };
+
+    // Fetch readings at every boundary in parallel
+    const values = await Promise.all(boundaries.map(fetchAt));
+
+    // Compute deltas: months[i] = values[i+1] - values[i]
+    const months = [];
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    for (let i = 0; i < 12; i++) {
+      const a = values[i];
+      const b = values[i + 1];
+      const d = boundaries[i];
+      const delta = (a !== null && b !== null) ? Math.max(0, b - a) : null;
+      months.push({
+        label: monthNames[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2),
+        value: delta,
+      });
+    }
+    return months;
+  }
+
+  _renderMonthlyChart(months) {
+    const wrap = this.shadowRoot.getElementById('shd-pmod-chart-wrap');
+    if (!wrap) return;
+    const max = Math.max(1, ...months.map(m => m.value || 0));
+    const html = '<div class="shd-pmod-chart">' + months.map(m => {
+      const v = m.value;
+      const h = v !== null ? Math.max(2, Math.round((v / max) * 160)) : 2;
+      return '<div class="shd-pmod-bar">' +
+        '<div class="shd-pmod-bar-val">' + (v !== null ? Math.round(v) : '—') + '</div>' +
+        '<div class="shd-pmod-bar-fill" style="height:' + h + 'px;"></div>' +
+        '<div class="shd-pmod-bar-lbl">' + this._esc(m.label) + '</div>' +
+        '</div>';
+    }).join('') + '</div>';
+    wrap.innerHTML = html;
+  }
+
+  _closeModal(id) {
+    const m = this.shadowRoot.getElementById('shd-' + id + '-modal');
+    if (m) m.classList.remove('shd-show');
+  }
+
   _esc(s) {
     if (s == null) return '';
     return String(s)
@@ -2409,6 +3450,8 @@ class SmartHomeDashboardCardEditor extends LitElement {
     super();
     this._loadedPickers = false;
     this._openSections = { appearance: true, header: true };
+    this._openFloorIdx = null;
+    this._openRoomIdx = null;
   }
 
   setConfig(config) {
@@ -2562,6 +3605,72 @@ class SmartHomeDashboardCardEditor extends LitElement {
         color: #f59e0b;
         margin-right: 6px;
       }
+
+      /* ── PHASE 2b — section badge, row layout, add/remove buttons ── */
+      .ed-section-badge {
+        margin-left: 6px;
+        font-size: 10px; font-weight: 600;
+        padding: 2px 7px;
+        border-radius: 8px;
+        background: rgba(245, 158, 11, 0.18);
+        color: #f59e0b;
+      }
+      .ed-row-entity {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 6px;
+        align-items: end;
+        margin-bottom: 6px;
+      }
+      .ed-row-entity .ed-field { margin-bottom: 0; }
+      .ed-add-btn {
+        display: inline-flex;
+        align-items: center; justify-content: center;
+        padding: 8px 14px;
+        background: rgba(74, 222, 128, 0.10);
+        border: 1px dashed rgba(74, 222, 128, 0.3);
+        border-radius: 8px;
+        color: #10b981;
+        font-size: 12px; font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+        margin-top: 4px;
+        transition: all 0.15s;
+      }
+      .ed-add-btn:hover {
+        background: rgba(74, 222, 128, 0.18);
+        border-color: rgba(74, 222, 128, 0.5);
+      }
+      .ed-remove-btn {
+        background: rgba(239, 68, 68, 0.10);
+        border: 1px solid rgba(239, 68, 68, 0.25);
+        color: #ef4444;
+        width: 32px; height: 32px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        font-family: inherit;
+        display: flex; align-items: center; justify-content: center;
+        transition: all 0.15s;
+      }
+      .ed-remove-btn:hover {
+        background: rgba(239, 68, 68, 0.18);
+        border-color: rgba(239, 68, 68, 0.4);
+      }
+      .ed-remove-btn-sm {
+        background: transparent;
+        border: none;
+        color: var(--secondary-text-color, rgba(255, 255, 255, 0.5));
+        cursor: pointer;
+        font-size: 14px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        transition: all 0.15s;
+      }
+      .ed-remove-btn-sm:hover {
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.10);
+      }
     `;
   }
 
@@ -2571,117 +3680,715 @@ class SmartHomeDashboardCardEditor extends LitElement {
     return html`
       <div class="ed-note">
         <span class="ed-badge">v${CARD_VERSION}</span>
-        Phase 2a: widget bodies live (left + right columns).
-        Editor sections for widgets coming in Phase 2b — for now, configure widgets via YAML.
-        Center column (rooms) coming in Phase 3.
+        Full configuration — every section uses HA-native pickers.
+        Changes save via HA's native flow (no extra buttons needed).
       </div>
 
       ${this._renderAppearance()}
       ${this._renderHeader()}
+      ${this._renderMembers()}
+      ${this._renderGarage()}
+      ${this._renderSalt()}
+      ${this._renderMower()}
+      ${this._renderSpotify()}
+      ${this._renderTV()}
+      ${this._renderSurveillance()}
+      ${this._renderPower()}
+      ${this._renderFloors()}
+      ${this._renderLabels()}
+    `;
+  }
 
-      <div class="ed-phase-note" style="margin-top:14px;">
-        <span class="ed-phase-badge">Phase 2+</span>
-        Members, garage, salt, mower, media (Spotify · TV · Surveillance), power monitoring,
-        floors &amp; rooms, and labels will be configurable in upcoming releases.
+  /* ════════ EDITOR HELPER WIDGETS ════════ */
+
+  _entityPicker({ value, domains, label, onChange, placeholder }) {
+    if (this._loadedPickers) {
+      return html`
+        <div class="ed-field">
+          ${label ? html`<span class="ed-label">${label}</span>` : ''}
+          <ha-entity-picker
+            .hass=${this.hass}
+            .value=${value || ''}
+            .includeDomains=${domains || undefined}
+            allow-custom-entity
+            @value-changed=${(e) => {
+              const v = e.detail.value || '';
+              if (v !== (value || '')) onChange(v);
+            }}
+          ></ha-entity-picker>
+        </div>
+      `;
+    }
+    return html`
+      <div class="ed-field">
+        ${label ? html`<span class="ed-label">${label}</span>` : ''}
+        <input
+          style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 10px;color:#fff;font-family:inherit;font-size:13px;width:100%;box-sizing:border-box;"
+          .value=${value || ''}
+          @input=${(e) => onChange(e.target.value)}
+          placeholder=${placeholder || ''}
+        />
       </div>
     `;
   }
 
-  _renderAppearance() {
-    const open = this._openSections.appearance !== false;
+  _textField({ value, label, placeholder, onChange, type, style }) {
     return html`
-      <div class="ed-section ${open ? '' : 'ed-collapsed'}">
-        <div class="ed-section-title" @click=${() => this._toggleSection('appearance')}>
-          <span>🎨 Appearance</span>
-          <span class="ed-chev" style="margin-left:auto;">▾</span>
-        </div>
-        <div class="ed-body">
-          <div class="ed-toggle">
-            <div>
-              <div class="ed-toggle-label">Force dark theme</div>
-              <div class="ed-toggle-help">Locks the Samsung-Premium dark look regardless of HA theme</div>
-            </div>
-            <ha-switch
-              .checked=${this._config.force_dark !== false}
-              @change=${(e) => this._set('force_dark', e.target.checked)}
-            ></ha-switch>
-          </div>
-        </div>
+      <div class="ed-field">
+        ${label ? html`<span class="ed-label">${label}</span>` : ''}
+        <input
+          type=${type || 'text'}
+          style=${'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 10px;color:#fff;font-family:inherit;font-size:13px;width:100%;box-sizing:border-box;' + (style || '')}
+          .value=${value || ''}
+          @input=${(e) => onChange(e.target.value)}
+          placeholder=${placeholder || ''}
+        />
       </div>
     `;
+  }
+
+  _toggle({ label, help, checked, onChange }) {
+    return html`
+      <div class="ed-toggle">
+        <div>
+          <div class="ed-toggle-label">${label}</div>
+          ${help ? html`<div class="ed-toggle-help">${help}</div>` : ''}
+        </div>
+        <ha-switch
+          .checked=${!!checked}
+          @change=${(e) => onChange(e.target.checked)}
+        ></ha-switch>
+      </div>
+    `;
+  }
+
+  _sectionShell(id, title, badge, body) {
+    const open = this._openSections[id] !== false;
+    return html`
+      <div class="ed-section ${open ? '' : 'ed-collapsed'}">
+        <div class="ed-section-title" @click=${() => this._toggleSection(id)}>
+          <span>${title}</span>
+          ${badge != null ? html`<span class="ed-section-badge">${badge}</span>` : ''}
+          <span class="ed-chev" style="margin-left:auto;">▾</span>
+        </div>
+        <div class="ed-body">${body}</div>
+      </div>
+    `;
+  }
+
+  /* ════════ SECTION RENDERERS ════════ */
+
+  _renderAppearance() {
+    return this._sectionShell('appearance', '🎨 Appearance', null, html`
+      ${this._toggle({
+        label: 'Force dark theme',
+        help: 'Locks the Samsung-Premium dark look regardless of HA theme',
+        checked: this._config.force_dark !== false,
+        onChange: (v) => this._set('force_dark', v),
+      })}
+    `);
   }
 
   _renderHeader() {
-    const open = this._openSections.header !== false;
     const header = this._config.header || {};
-    return html`
-      <div class="ed-section ${open ? '' : 'ed-collapsed'}">
-        <div class="ed-section-title" @click=${() => this._toggleSection('header')}>
-          <span>🕒 Header</span>
-          <span class="ed-chev" style="margin-left:auto;">▾</span>
-        </div>
-        <div class="ed-body">
+    return this._sectionShell('header', '🕒 Header', null, html`
+      ${this._toggle({
+        label: 'Show clock & sun chips',
+        checked: header.show_clock !== false,
+        onChange: (v) => this._setDeep(['header', 'show_clock'], v),
+      })}
+      ${this._entityPicker({
+        label: 'Weather entity',
+        value: header.weather_entity,
+        domains: ['weather'],
+        placeholder: 'weather.home',
+        onChange: (v) => this._setDeep(['header', 'weather_entity'], v),
+      })}
+      ${this._entityPicker({
+        label: 'Sun entity (for sunrise/sunset)',
+        value: header.sun_entity,
+        domains: ['sun'],
+        placeholder: 'sun.sun',
+        onChange: (v) => this._setDeep(['header', 'sun_entity'], v),
+      })}
+    `);
+  }
 
-          <div class="ed-toggle">
-            <div class="ed-toggle-label">Show clock &amp; sun chips</div>
-            <ha-switch
-              .checked=${header.show_clock !== false}
-              @change=${(e) => this._setDeep(['header', 'show_clock'], e.target.checked)}
-            ></ha-switch>
+  /* — Members — */
+  _renderMembers() {
+    // Defensive: accept both array and the {members: [...]} double-nesting bug
+    let members = this._config.members;
+    if (members && !Array.isArray(members) && Array.isArray(members.members)) {
+      members = members.members;
+    }
+    if (!Array.isArray(members)) members = [];
+    const count = members.length;
+
+    return this._sectionShell('members', '👥 Household Members', count, html`
+      ${members.map((m, i) => html`
+        <div class="ed-row-entity">
+          ${this._entityPicker({
+            label: `Member #${i + 1}`,
+            value: m && (m.person || m.person_entity || m.entity || ''),
+            domains: ['person'],
+            placeholder: 'person.someone',
+            onChange: (v) => this._updateMember(i, { person: v }),
+          })}
+          <button class="ed-remove-btn" @click=${() => this._removeMember(i)} title="Remove">✕</button>
+        </div>
+      `)}
+      <button class="ed-add-btn" @click=${() => this._addMember()}>+ Add member</button>
+    `);
+  }
+
+  _addMember() {
+    const list = (Array.isArray(this._config.members) ? this._config.members.slice() : []);
+    list.push({ person: '' });
+    this._set('members', list);
+  }
+
+  _removeMember(idx) {
+    const list = (Array.isArray(this._config.members) ? this._config.members.slice() : []);
+    list.splice(idx, 1);
+    this._set('members', list);
+  }
+
+  _updateMember(idx, patch) {
+    const list = (Array.isArray(this._config.members) ? this._config.members.slice() : []);
+    list[idx] = { ...(list[idx] || {}), ...patch };
+    this._set('members', list);
+  }
+
+  /* — Garage — */
+  _renderGarage() {
+    const g = this._config.garage || {};
+    return this._sectionShell('garage', '🏚 Garage', null, html`
+      ${this._entityPicker({
+        label: 'Cover entity (controls open/stop/close)',
+        value: g.cover,
+        domains: ['cover'],
+        placeholder: 'cover.smart_garage',
+        onChange: (v) => this._setDeep(['garage', 'cover'], v),
+      })}
+      ${this._entityPicker({
+        label: 'Contact sensor (door status)',
+        value: g.contact,
+        domains: ['binary_sensor'],
+        placeholder: 'binary_sensor.garage_door_contact',
+        onChange: (v) => this._setDeep(['garage', 'contact'], v),
+      })}
+    `);
+  }
+
+  /* — Salt — */
+  _renderSalt() {
+    const s = this._config.salt || {};
+    return this._sectionShell('salt', '🧂 Salt Level', null, html`
+      ${this._entityPicker({
+        label: 'Salt sensor (ultrasonic % or distance)',
+        value: s.sensor,
+        domains: ['sensor'],
+        placeholder: 'sensor.salt_level',
+        onChange: (v) => this._setDeep(['salt', 'sensor'], v),
+      })}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        ${this._textField({
+          label: 'Full at (cm) — optional',
+          value: s.full_at_cm != null ? String(s.full_at_cm) : '',
+          placeholder: '10',
+          type: 'number',
+          onChange: (v) => this._setDeep(['salt', 'full_at_cm'], v === '' ? null : Number(v)),
+        })}
+        ${this._textField({
+          label: 'Empty at (cm) — optional',
+          value: s.empty_at_cm != null ? String(s.empty_at_cm) : '',
+          placeholder: '60',
+          type: 'number',
+          onChange: (v) => this._setDeep(['salt', 'empty_at_cm'], v === '' ? null : Number(v)),
+        })}
+      </div>
+      <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:4px;line-height:1.5;">
+        If the sensor reports a % directly, calibration values are ignored.
+      </div>
+    `);
+  }
+
+  /* — Mower — */
+  _renderMower() {
+    const m = this._config.mower || {};
+    return this._sectionShell('mower', '🤖 Automower', null, html`
+      ${this._entityPicker({
+        label: 'Mower entity',
+        value: m.entity,
+        domains: ['lawn_mower'],
+        placeholder: 'lawn_mower.husqvarna',
+        onChange: (v) => this._setDeep(['mower', 'entity'], v),
+      })}
+    `);
+  }
+
+  /* — Spotify — */
+  _renderSpotify() {
+    const m = this._config.media || {};
+    return this._sectionShell('spotify', '🎵 Spotify', null, html`
+      ${this._entityPicker({
+        label: 'Spotify media_player entity',
+        value: m.spotify_entity,
+        domains: ['media_player'],
+        placeholder: 'media_player.spotify',
+        onChange: (v) => this._setDeep(['media', 'spotify_entity'], v),
+      })}
+    `);
+  }
+
+  /* — TV — */
+  _renderTV() {
+    const m = this._config.media || {};
+    const apps = m.apps || { netflix: true, youtube: true, prime: true, disney: true, plex: false, spotify: false };
+    return this._sectionShell('tv', '📺 TV (Samsung remote)', null, html`
+      ${this._entityPicker({
+        label: 'TV media_player entity',
+        value: m.tv_entity,
+        domains: ['media_player'],
+        placeholder: 'media_player.odin',
+        onChange: (v) => this._setDeep(['media', 'tv_entity'], v),
+      })}
+      ${this._entityPicker({
+        label: 'Remote entity (for key commands)',
+        value: m.remote_entity,
+        domains: ['remote'],
+        placeholder: 'remote.samsung_tv',
+        onChange: (v) => this._setDeep(['media', 'remote_entity'], v),
+      })}
+      <div style="font-size:11px;font-weight:600;color:var(--secondary-text-color,rgba(255,255,255,0.6));margin:10px 0 6px;text-transform:uppercase;letter-spacing:0.05em;">
+        Enable apps
+      </div>
+      ${this._toggle({
+        label: 'Netflix',
+        checked: apps.netflix !== false,
+        onChange: (v) => this._setDeep(['media', 'apps', 'netflix'], v),
+      })}
+      ${this._toggle({
+        label: 'YouTube',
+        checked: apps.youtube !== false,
+        onChange: (v) => this._setDeep(['media', 'apps', 'youtube'], v),
+      })}
+      ${this._toggle({
+        label: 'Prime Video',
+        checked: apps.prime !== false,
+        onChange: (v) => this._setDeep(['media', 'apps', 'prime'], v),
+      })}
+      ${this._toggle({
+        label: 'Disney+',
+        checked: apps.disney !== false,
+        onChange: (v) => this._setDeep(['media', 'apps', 'disney'], v),
+      })}
+      ${this._toggle({
+        label: 'Plex',
+        checked: !!apps.plex,
+        onChange: (v) => this._setDeep(['media', 'apps', 'plex'], v),
+      })}
+      ${this._toggle({
+        label: 'Spotify',
+        checked: !!apps.spotify,
+        onChange: (v) => this._setDeep(['media', 'apps', 'spotify'], v),
+      })}
+    `);
+  }
+
+  /* — Surveillance — */
+  _renderSurveillance() {
+    const s = this._config.surveillance || {};
+    const cams = Array.isArray(s.cameras) ? s.cameras : [];
+    return this._sectionShell('surveillance', '📷 Surveillance', cams.length, html`
+      ${cams.map((c, i) => {
+        const eid = (typeof c === 'string') ? c : (c.entity || '');
+        const lbl = (typeof c === 'string') ? '' : (c.label || '');
+        return html`
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px;margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="font-size:11px;font-weight:600;color:var(--primary-text-color,#fff);">Camera #${i + 1}</span>
+              <button class="ed-remove-btn-sm" @click=${() => this._removeCam(i)}>✕</button>
+            </div>
+            ${this._entityPicker({
+              label: 'Camera entity',
+              value: eid,
+              domains: ['camera'],
+              placeholder: 'camera.front_door',
+              onChange: (v) => this._updateCam(i, 'entity', v),
+            })}
+            ${this._textField({
+              label: 'Label (optional)',
+              value: lbl,
+              placeholder: 'Front Door',
+              onChange: (v) => this._updateCam(i, 'label', v),
+            })}
           </div>
+        `;
+      })}
+      <button class="ed-add-btn" @click=${() => this._addCam()}>+ Add camera</button>
+    `);
+  }
 
-          ${this._loadedPickers ? html`
-            <div class="ed-field">
-              <span class="ed-label">Weather entity</span>
-              <ha-entity-picker
-                .hass=${this.hass}
-                .value=${header.weather_entity || ''}
-                .includeDomains=${['weather']}
-                allow-custom-entity
-                @value-changed=${(e) => {
-                  const v = e.detail.value || '';
-                  if (v !== (header.weather_entity || '')) this._setDeep(['header', 'weather_entity'], v);
-                }}
-              ></ha-entity-picker>
-            </div>
+  _addCam() {
+    const surv = this._config.surveillance || {};
+    const cams = Array.isArray(surv.cameras) ? surv.cameras.slice() : [];
+    cams.push({ entity: '', label: '' });
+    this._setDeep(['surveillance', 'cameras'], cams);
+  }
 
-            <div class="ed-field">
-              <span class="ed-label">Sun entity (for sunrise/sunset)</span>
-              <ha-entity-picker
-                .hass=${this.hass}
-                .value=${header.sun_entity || 'sun.sun'}
-                .includeDomains=${['sun']}
-                allow-custom-entity
-                @value-changed=${(e) => {
-                  const v = e.detail.value || '';
-                  if (v !== (header.sun_entity || '')) this._setDeep(['header', 'sun_entity'], v);
-                }}
-              ></ha-entity-picker>
-            </div>
-          ` : html`
-            <div class="ed-field">
-              <span class="ed-label">Weather entity</span>
-              <input
-                style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 10px;color:#fff;font-family:inherit;font-size:13px;"
-                .value=${header.weather_entity || ''}
-                @input=${(e) => this._setDeep(['header', 'weather_entity'], e.target.value)}
-                placeholder="weather.home"
-              />
-            </div>
-            <div class="ed-field">
-              <span class="ed-label">Sun entity</span>
-              <input
-                style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 10px;color:#fff;font-family:inherit;font-size:13px;"
-                .value=${header.sun_entity || 'sun.sun'}
-                @input=${(e) => this._setDeep(['header', 'sun_entity'], e.target.value)}
-                placeholder="sun.sun"
-              />
-            </div>
-          `}
+  _removeCam(idx) {
+    const surv = this._config.surveillance || {};
+    const cams = Array.isArray(surv.cameras) ? surv.cameras.slice() : [];
+    cams.splice(idx, 1);
+    this._setDeep(['surveillance', 'cameras'], cams);
+  }
 
+  _updateCam(idx, key, value) {
+    const surv = this._config.surveillance || {};
+    const cams = Array.isArray(surv.cameras) ? surv.cameras.slice() : [];
+    let cam = cams[idx];
+    if (typeof cam === 'string') cam = { entity: cam };
+    cams[idx] = { ...(cam || {}), [key]: value };
+    this._setDeep(['surveillance', 'cameras'], cams);
+  }
+
+  /* — Power — */
+  _renderPower() {
+    const p = this._config.power || {};
+    return this._sectionShell('power', '⚡ Main Power', null, html`
+      ${this._entityPicker({
+        label: 'Power sensor (instantaneous W / kW)',
+        value: p.power_sensor,
+        domains: ['sensor'],
+        placeholder: 'sensor.em_home_power',
+        onChange: (v) => this._setDeep(['power', 'power_sensor'], v),
+      })}
+      ${this._entityPicker({
+        label: 'Energy sensor (cumulative kWh — required for monthly chart)',
+        value: p.energy_sensor,
+        domains: ['sensor'],
+        placeholder: 'sensor.em_home_energy_total',
+        onChange: (v) => this._setDeep(['power', 'energy_sensor'], v),
+      })}
+      <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:4px;line-height:1.5;">
+        Monthly chart fetches deltas via HA's history API at each month boundary.
+      </div>
+    `);
+  }
+
+  /* — Labels (Phase 4) — */
+  _renderLabels() {
+    const labels = Array.isArray(this._config.labels) ? this._config.labels : [];
+    const labelStr = labels.join(', ');
+    return this._sectionShell('labels', '🏷 Labels (room filter)', labels.length || null, html`
+      ${this._textField({
+        label: 'Comma-separated label IDs',
+        value: labelStr,
+        placeholder: 'main_floor, social_area',
+        onChange: (v) => {
+          const list = v.split(',').map(s => s.trim()).filter(Boolean);
+          this._set('labels', list);
+        },
+      })}
+      <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:4px;line-height:1.5;">
+        If set, only rooms whose <code>labels:</code> array includes one of these will render. Leave empty to show all rooms.
+      </div>
+    `);
+  }
+
+  /* — Floors & Rooms — */
+  _renderFloors() {
+    const floors = Array.isArray(this._config.floors) ? this._config.floors : [];
+    return this._sectionShell('floors', '🏠 Floors & Rooms', floors.length, html`
+      ${floors.map((f, fi) => this._renderFloorRow(f, fi))}
+      <button class="ed-add-btn" @click=${() => this._addFloor()}>+ Add floor</button>
+    `);
+  }
+
+  _renderFloorRow(floor, fi) {
+    const open = this._openFloorIdx === fi;
+    const rooms = Array.isArray(floor.rooms) ? floor.rooms : [];
+    return html`
+      <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-bottom:8px;overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;background:${open ? 'rgba(245,158,11,0.08)' : 'transparent'};"
+             @click=${() => { this._openFloorIdx = open ? null : fi; this._openRoomIdx = null; this.requestUpdate(); }}>
+          <span style="font-size:18px;">${floor.icon || '🏠'}</span>
+          <span style="flex:1;font-weight:600;font-size:13px;">${floor.label || floor.name || floor.id}</span>
+          <span style="font-size:10px;color:var(--secondary-text-color,rgba(255,255,255,0.5));">${rooms.length} room${rooms.length === 1 ? '' : 's'}</span>
+          <span style="font-size:11px;transition:transform 0.2s;transform:${open ? 'rotate(180deg)' : 'rotate(0deg)'};">▾</span>
         </div>
+        ${open ? html`
+          <div style="padding:12px;border-top:1px solid rgba(255,255,255,0.06);">
+            <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end;margin-bottom:10px;">
+              ${this._textField({
+                label: 'Label',
+                value: floor.label || floor.name || '',
+                placeholder: 'Ground Floor',
+                onChange: (v) => this._updateFloor(fi, { label: v, name: v }),
+              })}
+              ${this._textField({
+                label: 'Icon',
+                value: floor.icon || '',
+                placeholder: '🏢',
+                style: 'text-align:center;font-size:16px;max-width:60px;',
+                onChange: (v) => this._updateFloor(fi, { icon: v }),
+              })}
+              <button class="ed-remove-btn" @click=${() => this._removeFloor(fi)} title="Remove floor">✕</button>
+            </div>
+
+            <div style="font-size:11px;font-weight:600;color:var(--secondary-text-color,rgba(255,255,255,0.6));margin:14px 0 8px;text-transform:uppercase;letter-spacing:0.05em;">
+              Rooms (${rooms.length})
+            </div>
+            ${rooms.map((r, ri) => this._renderRoomRow(r, fi, ri))}
+            <button class="ed-add-btn" @click=${() => this._addRoom(fi)}>+ Add room</button>
+          </div>
+        ` : ''}
       </div>
     `;
+  }
+
+  _renderRoomRow(room, fi, ri) {
+    const open = this._openFloorIdx === fi && this._openRoomIdx === ri;
+    const lights = Array.isArray(room.lights) ? room.lights : [];
+    return html`
+      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;margin-bottom:6px;overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:6px;padding:7px 10px;cursor:pointer;"
+             @click=${() => { this._openRoomIdx = open ? null : ri; this.requestUpdate(); }}>
+          <span>${room.icon || '🚪'}</span>
+          <span style="flex:1;font-size:12px;font-weight:600;">${room.name || 'Unnamed room'}</span>
+          <span style="font-size:10px;transition:transform 0.2s;transform:${open ? 'rotate(180deg)' : 'rotate(0deg)'};">▾</span>
+        </div>
+        ${open ? html`
+          <div style="padding:10px;border-top:1px solid rgba(255,255,255,0.06);">
+            <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end;">
+              ${this._textField({
+                label: 'Name',
+                value: room.name || '',
+                placeholder: 'Living Room',
+                onChange: (v) => this._updateRoom(fi, ri, { name: v }),
+              })}
+              ${this._textField({
+                label: 'Icon',
+                value: room.icon || '',
+                placeholder: '🛋️',
+                style: 'text-align:center;font-size:14px;max-width:50px;',
+                onChange: (v) => this._updateRoom(fi, ri, { icon: v }),
+              })}
+              <button class="ed-remove-btn" @click=${() => this._removeRoom(fi, ri)} title="Remove room">✕</button>
+            </div>
+            ${this._entityPicker({
+              label: 'Temperature sensor',
+              value: room.temp_sensor,
+              domains: ['sensor'],
+              placeholder: 'sensor.temp_*_temperature',
+              onChange: (v) => this._updateRoom(fi, ri, { temp_sensor: v }),
+            })}
+            ${this._entityPicker({
+              label: 'Humidity sensor',
+              value: room.hum_sensor,
+              domains: ['sensor'],
+              placeholder: 'sensor.temp_*_humidity',
+              onChange: (v) => this._updateRoom(fi, ri, { hum_sensor: v }),
+            })}
+            ${this._entityPicker({
+              label: 'Presence sensor',
+              value: room.presence_sensor,
+              domains: ['binary_sensor'],
+              placeholder: 'binary_sensor.*_presence',
+              onChange: (v) => this._updateRoom(fi, ri, { presence_sensor: v }),
+            })}
+            ${this._entityPicker({
+              label: 'Door / window contact',
+              value: room.door_sensor,
+              domains: ['binary_sensor'],
+              placeholder: 'binary_sensor.*_contact',
+              onChange: (v) => this._updateRoom(fi, ri, { door_sensor: v }),
+            })}
+            ${this._entityPicker({
+              label: 'Motion sensor',
+              value: room.motion_sensor,
+              domains: ['binary_sensor'],
+              placeholder: 'binary_sensor.*_motion',
+              onChange: (v) => this._updateRoom(fi, ri, { motion_sensor: v }),
+            })}
+            ${this._entityPicker({
+              label: 'Power sensor (optional, room-level)',
+              value: room.power_sensor,
+              domains: ['sensor'],
+              placeholder: 'sensor.*_power',
+              onChange: (v) => this._updateRoom(fi, ri, { power_sensor: v }),
+            })}
+
+            <div style="font-size:11px;font-weight:600;color:var(--secondary-text-color,rgba(255,255,255,0.6));margin:14px 0 6px;text-transform:uppercase;letter-spacing:0.05em;">
+              Lights & switches (${lights.length})
+            </div>
+            ${lights.map((l, li) => html`
+              <div class="ed-row-entity">
+                ${this._entityPicker({
+                  value: typeof l === 'string' ? l : (l && l.entity) || '',
+                  domains: ['light', 'switch'],
+                  placeholder: 'light.kitchen_main',
+                  onChange: (v) => this._updateLight(fi, ri, li, v),
+                })}
+                <button class="ed-remove-btn" @click=${() => this._removeLight(fi, ri, li)} title="Remove">✕</button>
+              </div>
+            `)}
+            <button class="ed-add-btn" @click=${() => this._addLight(fi, ri)}>+ Add light or switch</button>
+
+            <div style="font-size:11px;font-weight:600;color:var(--secondary-text-color,rgba(255,255,255,0.6));margin:14px 0 6px;text-transform:uppercase;letter-spacing:0.05em;">
+              Extra sensors (shown in room modal)
+            </div>
+            ${(room.extra_sensors || []).map((es, ei) => html`
+              <div class="ed-row-entity">
+                ${this._entityPicker({
+                  value: typeof es === 'string' ? es : (es && es.entity) || '',
+                  domains: ['sensor', 'binary_sensor'],
+                  placeholder: 'sensor.co2_living',
+                  onChange: (v) => this._updateExtra(fi, ri, ei, v),
+                })}
+                <button class="ed-remove-btn" @click=${() => this._removeExtra(fi, ri, ei)} title="Remove">✕</button>
+              </div>
+            `)}
+            <button class="ed-add-btn" @click=${() => this._addExtra(fi, ri)}>+ Add extra sensor</button>
+
+            <div style="font-size:11px;font-weight:600;color:var(--secondary-text-color,rgba(255,255,255,0.6));margin:14px 0 6px;text-transform:uppercase;letter-spacing:0.05em;">
+              Labels (optional)
+            </div>
+            ${this._textField({
+              label: '',
+              value: Array.isArray(room.labels) ? room.labels.join(', ') : '',
+              placeholder: 'main_floor, social_area',
+              onChange: (v) => {
+                const list = v.split(',').map(s => s.trim()).filter(Boolean);
+                this._updateRoom(fi, ri, { labels: list });
+              },
+            })}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _addFloor() {
+    const list = (this._config.floors || []).slice();
+    list.push({ name: 'New Floor', icon: '🏠', rooms: [] });
+    this._set('floors', list);
+    this._openFloorIdx = list.length - 1;
+  }
+
+  _removeFloor(fi) {
+    const list = (this._config.floors || []).slice();
+    list.splice(fi, 1);
+    if (this._openFloorIdx === fi) this._openFloorIdx = null;
+    this._set('floors', list);
+  }
+
+  _updateFloor(fi, patch) {
+    const list = (this._config.floors || []).slice();
+    list[fi] = { ...(list[fi] || {}), ...patch };
+    this._set('floors', list);
+  }
+
+  _addRoom(fi) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    floor.rooms.push({ name: 'New Room', icon: '🚪' });
+    list[fi] = floor;
+    this._set('floors', list);
+    this._openRoomIdx = floor.rooms.length - 1;
+  }
+
+  _removeRoom(fi, ri) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    floor.rooms.splice(ri, 1);
+    list[fi] = floor;
+    if (this._openRoomIdx === ri) this._openRoomIdx = null;
+    this._set('floors', list);
+  }
+
+  _updateRoom(fi, ri, patch) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    floor.rooms[ri] = { ...(floor.rooms[ri] || {}), ...patch };
+    list[fi] = floor;
+    this._set('floors', list);
+  }
+
+  _addLight(fi, ri) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    const room = { ...(floor.rooms[ri] || {}) };
+    room.lights = Array.isArray(room.lights) ? room.lights.slice() : [];
+    room.lights.push('');
+    floor.rooms[ri] = room;
+    list[fi] = floor;
+    this._set('floors', list);
+  }
+
+  _removeLight(fi, ri, li) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    const room = { ...(floor.rooms[ri] || {}) };
+    room.lights = Array.isArray(room.lights) ? room.lights.slice() : [];
+    room.lights.splice(li, 1);
+    floor.rooms[ri] = room;
+    list[fi] = floor;
+    this._set('floors', list);
+  }
+
+  _updateLight(fi, ri, li, value) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    const room = { ...(floor.rooms[ri] || {}) };
+    room.lights = Array.isArray(room.lights) ? room.lights.slice() : [];
+    room.lights[li] = value;
+    floor.rooms[ri] = room;
+    list[fi] = floor;
+    this._set('floors', list);
+  }
+
+  _addExtra(fi, ri) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    const room = { ...(floor.rooms[ri] || {}) };
+    room.extra_sensors = Array.isArray(room.extra_sensors) ? room.extra_sensors.slice() : [];
+    room.extra_sensors.push('');
+    floor.rooms[ri] = room;
+    list[fi] = floor;
+    this._set('floors', list);
+  }
+
+  _removeExtra(fi, ri, ei) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    const room = { ...(floor.rooms[ri] || {}) };
+    room.extra_sensors = Array.isArray(room.extra_sensors) ? room.extra_sensors.slice() : [];
+    room.extra_sensors.splice(ei, 1);
+    floor.rooms[ri] = room;
+    list[fi] = floor;
+    this._set('floors', list);
+  }
+
+  _updateExtra(fi, ri, ei, value) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    const room = { ...(floor.rooms[ri] || {}) };
+    room.extra_sensors = Array.isArray(room.extra_sensors) ? room.extra_sensors.slice() : [];
+    room.extra_sensors[ei] = value;
+    floor.rooms[ri] = room;
+    list[fi] = floor;
+    this._set('floors', list);
   }
 }
 
@@ -2694,13 +4401,13 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type:             'smarthome-dashboard-card',
   name:             'Smart Home Dashboard Card',
-  description:      'Unified Samsung-Premium dashboard: floors, rooms, climate, media, surveillance, mower, power, garage. (Phase 2a: widgets live)',
+  description:      'Unified Samsung-Premium dashboard: floors, rooms, climate, media, surveillance, mower, power, garage. (Full V1: editor + rooms + modals)',
   preview:          true,
   documentationURL: 'https://github.com/robman2026/smarthome-dashboard-card',
 });
 
 console.info(
-  '%c SMARTHOME-DASHBOARD-CARD %c v' + CARD_VERSION + ' %c Phase 2a: Widgets ',
+  '%c SMARTHOME-DASHBOARD-CARD %c v' + CARD_VERSION + ' %c V1 Complete ',
   'background:#f59e0b;color:#000;font-weight:700;padding:2px 6px;border-radius:4px 0 0 4px;',
   'background:#1a1f35;color:#fcd34d;font-weight:600;padding:2px 6px;',
   'background:#10b981;color:#000;font-weight:600;padding:2px 6px;border-radius:0 4px 4px 0;'
