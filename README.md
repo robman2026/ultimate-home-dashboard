@@ -99,16 +99,46 @@ You'll see the topbar with 5 floor tabs, the live clock, the responsive 3-column
 
 ### `floors` options
 
-Each floor is an object with:
+Each floor is an object. The card accepts **two equivalent shapes** for convenience:
 
-| Option | Type | Description |
+**Shape A — natural HA style:**
+
+```yaml
+floors:
+  - name: Ground Floor
+    icon: 🏢
+    rooms: []
+  - name: Floor 1
+    icon: 🏠
+    rooms: []
+```
+
+**Shape B — strict (matches what the editor will save in Phase 4):**
+
+```yaml
+floors:
+  - id: ground
+    label: Ground Floor
+    icon: 🏢
+    rooms: []
+  - id: floor1
+    label: Floor 1
+    icon: 🏠
+    rooms: []
+```
+
+Both produce identical behavior. Shape A is normalized internally — `name` becomes both the `label` and a slugified `id` (e.g. `"Floor 1"` → id `floor_1`). Use whichever feels more natural.
+
+| Field | Type | Description |
 |---|---|---|
-| `id` | string | Internal ID used by `default_floor` |
-| `label` | string | Displayed name in the floor tab |
-| `icon` | emoji or string | Shown alongside the label |
-| `rooms` | array | List of rooms for this floor *(Phase 3)* |
+| `id` | string | Internal ID used by `default_floor`. Auto-derived from `name` if omitted. |
+| `name` / `label` | string | Displayed in the floor tab. |
+| `icon` | emoji or string | Shown alongside the label. |
+| `rooms` | array | List of rooms for this floor *(Phase 3)*. |
 
 Defaults provide: Garden · Basement · Ground Floor · Floor 1 · Attic.
+
+> ⚠ If `default_floor` doesn't match any configured floor's `id`, the first floor is shown.
 
 ### Stub configurations for later phases
 
