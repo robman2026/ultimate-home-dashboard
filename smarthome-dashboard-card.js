@@ -16,7 +16,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.1.0';
+const CARD_VERSION = '0.1.1';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -309,6 +309,54 @@ const css  = LitElement.prototype.css;
 })();
 
 /* ════════════════════════════════════════════════════════════════════
+   FLOOR NORMALIZER — accept all reasonable schemas
+   Users may write floors as { id, label, icon } (strict),
+   { name, icon } (HA-natural), or { id, name, icon } (both).
+   This normalizes every entry to { id, label, icon, rooms }.
+   ════════════════════════════════════════════════════════════════════ */
+function slugify(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip accents
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    || 'floor';
+}
+
+function normalizeFloor(f, idx) {
+  if (!f || typeof f !== 'object') return null;
+  // Resolve id
+  let id = f.id;
+  if (!id && f.name) id = slugify(f.name);
+  if (!id && f.label) id = slugify(f.label);
+  if (!id) id = 'floor_' + (idx + 1);
+  // Resolve label
+  let label = f.label || f.name || id;
+  // Resolve icon
+  let icon = f.icon || '';
+  // Rooms array
+  let rooms = Array.isArray(f.rooms) ? f.rooms : [];
+  return { id: String(id), label: String(label), icon: String(icon), rooms };
+}
+
+function normalizeFloors(floors) {
+  if (!Array.isArray(floors) || floors.length === 0) return null;
+  const out = [];
+  const seenIds = new Set();
+  floors.forEach((f, i) => {
+    const nf = normalizeFloor(f, i);
+    if (!nf) return;
+    // Disambiguate duplicate ids (e.g. two floors both auto-slugged to "balcony")
+    let id = nf.id, n = 2;
+    while (seenIds.has(id)) { id = nf.id + '_' + n++; }
+    nf.id = id;
+    seenIds.add(id);
+    out.push(nf);
+  });
+  return out.length ? out : null;
+}
+
+/* ════════════════════════════════════════════════════════════════════
    STUB CONFIG — what HA inserts when user picks the card
    ════════════════════════════════════════════════════════════════════ */
 function getStubConfig() {
@@ -432,14 +480,17 @@ const CARD_STYLES = `
     display: inline-flex; align-items: center; gap: 6px;
     padding: 5px 14px; border-radius: 20px;
     cursor: pointer; user-select: none;
-    font-size: 11px; font-weight: 600;
-    color: var(--shd-text-secondary);
+    font-size: 12px; font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
     border: 1px solid transparent;
     transition: all 0.2s;
+    white-space: nowrap;
+    line-height: 1.4;
   }
-  .shd-floor-tab:hover { color: rgba(255, 255, 255, 0.75); }
+  .shd-floor-tab > span { color: inherit; font-size: inherit; }
+  .shd-floor-tab:hover { color: #fff; background: rgba(255, 255, 255, 0.04); }
   .shd-floor-tab.shd-active {
-    background: rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.12);
     color: #fff;
     border-color: var(--shd-border-glow);
   }
@@ -585,17 +636,23 @@ class SmartHomeDashboardCard extends HTMLElement {
     if (this._config.media && config.media && config.media.apps) {
       this._config.media.apps = { ...stub.media.apps, ...config.media.apps };
     }
-    // Floors: replace whole array if user provides one
-    if (config.floors && Array.isArray(config.floors)) {
-      this._config.floors = config.floors;
+    // Floors: replace whole array if user provides one, then normalize to canonical shape.
+    // We accept {id,label,icon} (strict), {name,icon} (HA-natural), or {id,name,icon} (both).
+    if (config.floors && Array.isArray(config.floors) && config.floors.length > 0) {
+      const normalized = normalizeFloors(config.floors);
+      if (normalized) this._config.floors = normalized;
+    } else {
+      // Stub floors are already canonical; normalize defensively anyway.
+      this._config.floors = normalizeFloors(this._config.floors) || [];
     }
 
-    // Determine initial floor
-    const validFloorIds = (this._config.floors || []).map(f => f.id);
+    // Determine initial floor: prefer default_floor if it matches a configured floor;
+    // otherwise fall back to the first floor (never show "Unknown").
+    const validFloorIds = this._config.floors.map(f => f.id);
     if (!this._currentFloor || !validFloorIds.includes(this._currentFloor)) {
       this._currentFloor = (validFloorIds.includes(this._config.default_floor))
         ? this._config.default_floor
-        : (validFloorIds[0] || 'ground');
+        : (validFloorIds[0] || null);
     }
 
     if (this._built) {
@@ -659,13 +716,15 @@ class SmartHomeDashboardCard extends HTMLElement {
   _renderTopbar() {
     const cfg = this._config;
     const floors = (cfg.floors || []);
-    const floorTabsHTML = floors.map(f => {
-      const active = f.id === this._currentFloor ? ' shd-active' : '';
-      return `<div class="shd-floor-tab${active}" data-floor="${this._esc(f.id)}">
-        <span>${this._esc(f.icon || '')}</span>
-        <span>${this._esc(f.label || f.id)}</span>
-      </div>`;
-    }).join('');
+    const floorTabsHTML = floors.length
+      ? floors.map(f => {
+          const active = f.id === this._currentFloor ? ' shd-active' : '';
+          const iconHTML = f.icon ? `<span>${this._esc(f.icon)}</span>` : '';
+          return `<div class="shd-floor-tab${active}" data-floor="${this._esc(f.id)}">
+            ${iconHTML}<span>${this._esc(f.label)}</span>
+          </div>`;
+        }).join('')
+      : `<span style="font-size:11px;color:var(--shd-text-muted);font-style:italic;">No floors configured · add some in YAML or visual editor</span>`;
 
     return `
       <div class="shd-topbar">
@@ -686,8 +745,11 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _renderMain() {
-    const currentFloor = (this._config.floors || []).find(f => f.id === this._currentFloor);
-    const floorLabel = currentFloor ? currentFloor.label : 'Unknown';
+    const floors = this._config.floors || [];
+    const currentFloor = floors.find(f => f.id === this._currentFloor);
+    const floorLabel = currentFloor
+      ? currentFloor.label
+      : (floors.length ? floors[0].label : 'No floor');
     return `
       <div class="shd-main">
         <!-- LEFT COLUMN -->
