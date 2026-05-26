@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.3.0';
+const CARD_VERSION = '0.3.1';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -1889,6 +1889,7 @@ class SmartHomeDashboardCard extends HTMLElement {
   disconnectedCallback() {
     if (this._tickInterval) { clearInterval(this._tickInterval); this._tickInterval = null; }
     if (this._ro) { this._ro.disconnect(); this._ro = null; }
+    if (this._gateAnimFrame) { cancelAnimationFrame(this._gateAnimFrame); this._gateAnimFrame = null; }
   }
 
   _render() {
@@ -1995,9 +1996,16 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _garageSceneSVG() {
-    // The detailed RAL 7016 garage scene from preview v3
+    // Detailed RAL 7016 garage scene with animatable door panels.
+    // Panels are clipped by #shd-gdc so they disappear into the housing
+    // as they slide upward (same technique as the original HTML preview).
     return `
       <svg viewBox="0 0 360 240" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <clipPath id="shd-gdc" clipPathUnits="userSpaceOnUse">
+            <rect x="60" y="94" width="240" height="118"/>
+          </clipPath>
+        </defs>
         <rect x="0" y="0" width="360" height="180" fill="#1a2845"/>
         <rect x="20" y="60" width="320" height="6" fill="#c8c8c8"/>
         <rect x="30" y="20" width="140" height="40" fill="rgba(80,100,140,0.4)" stroke="#aaa" stroke-width="0.5"/>
@@ -2024,20 +2032,23 @@ class SmartHomeDashboardCard extends HTMLElement {
         <rect x="306" y="90" width="2" height="130" fill="rgba(0,0,0,0.06)"/>
         <rect x="54" y="90" width="252" height="125" fill="#c8c6bf"/>
         <rect x="60" y="94" width="240" height="118" fill="#0a0a0a"/>
-        <g id="shd-garage-door-panels">
-          <rect x="60" y="94" width="240" height="22" fill="#383e42" stroke="#2a2e30" stroke-width="0.5"/>
-          <rect x="60" y="116" width="240" height="22" fill="#3f4549" stroke="#2a2e30" stroke-width="0.5"/>
-          <rect x="60" y="138" width="240" height="22" fill="#383e42" stroke="#2a2e30" stroke-width="0.5"/>
-          <rect x="60" y="160" width="240" height="22" fill="#3f4549" stroke="#2a2e30" stroke-width="0.5"/>
-          <rect x="60" y="182" width="240" height="22" fill="#383e42" stroke="#2a2e30" stroke-width="0.5"/>
-          <line x1="60" y1="95" x2="300" y2="95" stroke="rgba(255,255,255,0.06)"/>
-          <line x1="60" y1="117" x2="300" y2="117" stroke="rgba(255,255,255,0.06)"/>
-          <line x1="60" y1="139" x2="300" y2="139" stroke="rgba(255,255,255,0.06)"/>
-          <line x1="60" y1="161" x2="300" y2="161" stroke="rgba(255,255,255,0.06)"/>
-          <line x1="60" y1="183" x2="300" y2="183" stroke="rgba(255,255,255,0.06)"/>
-          <circle cx="180" cy="148" r="4" fill="#666" stroke="rgba(255,255,255,0.2)" stroke-width="0.5"/>
-          <circle cx="180" cy="148" r="1.5" fill="#333"/>
+
+        <!-- Animatable door panels (clipped by #shd-gdc) -->
+        <g id="shd-garage-door-panels" clip-path="url(#shd-gdc)">
+          <rect id="shd-gp1" x="60" y="94"  width="240" height="22" fill="#383e42" stroke="#2a2e30" stroke-width="0.5"/>
+          <rect id="shd-gp2" x="60" y="116" width="240" height="22" fill="#3f4549" stroke="#2a2e30" stroke-width="0.5"/>
+          <rect id="shd-gp3" x="60" y="138" width="240" height="22" fill="#383e42" stroke="#2a2e30" stroke-width="0.5"/>
+          <rect id="shd-gp4" x="60" y="160" width="240" height="22" fill="#3f4549" stroke="#2a2e30" stroke-width="0.5"/>
+          <rect id="shd-gp5" x="60" y="182" width="240" height="22" fill="#383e42" stroke="#2a2e30" stroke-width="0.5"/>
+          <line id="shd-gl1" x1="60" y1="95"  x2="300" y2="95"  stroke="rgba(255,255,255,0.06)"/>
+          <line id="shd-gl2" x1="60" y1="117" x2="300" y2="117" stroke="rgba(255,255,255,0.06)"/>
+          <line id="shd-gl3" x1="60" y1="139" x2="300" y2="139" stroke="rgba(255,255,255,0.06)"/>
+          <line id="shd-gl4" x1="60" y1="161" x2="300" y2="161" stroke="rgba(255,255,255,0.06)"/>
+          <line id="shd-gl5" x1="60" y1="183" x2="300" y2="183" stroke="rgba(255,255,255,0.06)"/>
+          <circle id="shd-gh1" cx="180" cy="148" r="4" fill="#666" stroke="rgba(255,255,255,0.2)" stroke-width="0.5"/>
+          <circle id="shd-gh2" cx="180" cy="148" r="1.5" fill="#333"/>
         </g>
+
         <circle cx="68" cy="100" r="3" fill="#10b981">
           <animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/>
         </circle>
@@ -3261,7 +3272,141 @@ class SmartHomeDashboardCard extends HTMLElement {
     const m = this.shadowRoot.getElementById('shd-gate-modal');
     if (!m) return;
     m.classList.add('shd-show');
+    // Sync the visual to whatever current state the door is in.
+    // _gateOffset: 0 = fully closed, 100 = fully open.
+    if (this._gateOffset == null) {
+      this._gateOffset = this._gateOffsetFromState();
+      this._applyGatePanels();
+    }
     this._updateGarageModal();
+  }
+
+  _gateOffsetFromState() {
+    const cover = this._config.garage && this._config.garage.cover;
+    const contact = this._config.garage && this._config.garage.contact;
+    if (cover) {
+      const s = getState(this._hass, cover);
+      if (s === 'open' || s === 'opening') return 100;
+      if (s === 'closed' || s === 'closing') return 0;
+    } else if (contact) {
+      const s = getState(this._hass, contact);
+      if (s === 'on') return 100;
+      if (s === 'off') return 0;
+    }
+    return 0;
+  }
+
+  // Apply the current _gateOffset to the panel SVG elements
+  _applyGatePanels() {
+    if (!this.shadowRoot || this._gateOffset == null) return;
+    // moveY scales offset (0..100) to a translation of roughly -126px upward
+    // (matches the HTML preview's 1.26 multiplier — 5 panels × 22px + headroom).
+    const moveY = -(this._gateOffset * 1.26);
+    const panels = [
+      { id: 'shd-gp1', baseY: 94 },
+      { id: 'shd-gp2', baseY: 116 },
+      { id: 'shd-gp3', baseY: 138 },
+      { id: 'shd-gp4', baseY: 160 },
+      { id: 'shd-gp5', baseY: 182 },
+    ];
+    const lines = [
+      { id: 'shd-gl1', baseY: 95 },
+      { id: 'shd-gl2', baseY: 117 },
+      { id: 'shd-gl3', baseY: 139 },
+      { id: 'shd-gl4', baseY: 161 },
+      { id: 'shd-gl5', baseY: 183 },
+    ];
+    const handles = [
+      { id: 'shd-gh1', baseY: 148 },
+      { id: 'shd-gh2', baseY: 148 },
+    ];
+    panels.forEach(p => {
+      const el = this.shadowRoot.getElementById(p.id);
+      if (el) el.setAttribute('y', (p.baseY + moveY).toFixed(1));
+    });
+    lines.forEach(l => {
+      const el = this.shadowRoot.getElementById(l.id);
+      if (el) {
+        const y = (l.baseY + moveY).toFixed(1);
+        el.setAttribute('y1', y);
+        el.setAttribute('y2', y);
+      }
+    });
+    handles.forEach(h => {
+      const el = this.shadowRoot.getElementById(h.id);
+      if (el) el.setAttribute('cy', (h.baseY + moveY).toFixed(1));
+    });
+  }
+
+  _animateGateTo(targetOffset, durationMs = 4000) {
+    if (this._gateAnimFrame) {
+      cancelAnimationFrame(this._gateAnimFrame);
+      this._gateAnimFrame = null;
+    }
+    const startOffset = this._gateOffset != null ? this._gateOffset : 0;
+    if (Math.abs(targetOffset - startOffset) < 0.5) {
+      this._gateOffset = targetOffset;
+      this._applyGatePanels();
+      return;
+    }
+    const startTime = performance.now();
+    // Speed proportional to distance so opening from 50% takes half the time
+    const span = Math.abs(targetOffset - startOffset);
+    const duration = Math.max(300, (span / 100) * durationMs);
+    const direction = targetOffset > startOffset ? 1 : -1;
+
+    const step = (now) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / duration);
+      // ease-in-out cubic for slight realism
+      const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      this._gateOffset = startOffset + direction * span * eased;
+      this._applyGatePanels();
+      // Update SVG status text while moving
+      const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+      if (svgText) {
+        svgText.textContent = 'STATUS: ' + (direction > 0 ? 'OPENING' : 'CLOSING');
+      }
+      const modalStatus = this.shadowRoot.getElementById('shd-gate-modal-status');
+      if (modalStatus) {
+        modalStatus.textContent = direction > 0 ? 'OPENING' : 'CLOSING';
+        modalStatus.style.color = direction > 0 ? '#fbbf24' : '#f97316';
+      }
+      // Update last-change-time field to show movement time
+      const tEl = this.shadowRoot.getElementById('shd-gate-modal-time');
+      if (tEl) tEl.textContent = (elapsed / 1000).toFixed(1) + 's';
+      if (t < 1) {
+        this._gateAnimFrame = requestAnimationFrame(step);
+      } else {
+        this._gateAnimFrame = null;
+        this._gateOffset = targetOffset;
+        this._applyGatePanels();
+        // Final status label
+        const finalOpen = targetOffset >= 100;
+        if (svgText) svgText.textContent = 'STATUS: ' + (finalOpen ? 'OPEN' : 'CLOSED');
+        if (modalStatus) {
+          modalStatus.textContent = finalOpen ? 'OPEN' : 'CLOSED';
+          modalStatus.style.color = finalOpen ? '#fbbf24' : '#10b981';
+          modalStatus.classList.toggle('shd-open', finalOpen);
+        }
+      }
+    };
+    this._gateAnimFrame = requestAnimationFrame(step);
+  }
+
+  _stopGateAnim() {
+    if (this._gateAnimFrame) {
+      cancelAnimationFrame(this._gateAnimFrame);
+      this._gateAnimFrame = null;
+      const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+      if (svgText) svgText.textContent = 'STATUS: STOPPED';
+      const modalStatus = this.shadowRoot.getElementById('shd-gate-modal-status');
+      if (modalStatus) {
+        modalStatus.textContent = 'STOPPED';
+        modalStatus.style.color = '#f87171';
+        modalStatus.classList.remove('shd-open');
+      }
+    }
   }
 
   _updateGarageModal() {
@@ -3271,31 +3416,65 @@ class SmartHomeDashboardCard extends HTMLElement {
     if (!eid) return;
     const o = getStateObj(this._hass, eid);
     if (!o) return;
-    let label = 'UNKNOWN', isOpen = false;
+    let label = 'UNKNOWN', isOpen = false, isMoving = false;
     if (cover) {
+      isOpen   = (o.state === 'open');
+      isMoving = (o.state === 'opening' || o.state === 'closing');
       label = (o.state || 'unknown').toUpperCase();
-      isOpen = (o.state === 'open' || o.state === 'opening');
     } else if (contact) {
       isOpen = (o.state === 'on');
       label = isOpen ? 'OPEN' : 'CLOSED';
     }
     const sEl = this.shadowRoot.getElementById('shd-gate-modal-status');
     const tEl = this.shadowRoot.getElementById('shd-gate-modal-time');
-    if (sEl) {
-      sEl.textContent = label;
-      sEl.classList.toggle('shd-open', isOpen);
+    // Only update label here if we're NOT animating ourselves (animation handles its own label updates)
+    if (!this._gateAnimFrame) {
+      if (sEl) {
+        sEl.textContent = label;
+        sEl.classList.toggle('shd-open', isOpen);
+      }
+      if (tEl) tEl.textContent = humanizeTimeAgo(o.last_changed);
+      const svg = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+      if (svg) svg.textContent = 'STATUS: ' + label;
     }
-    if (tEl) tEl.textContent = humanizeTimeAgo(o.last_changed);
-    // Update SVG status text
-    const svg = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
-    if (svg) svg.textContent = 'STATUS: ' + label;
+
+    // Sync panel position to actual entity state if we're not in the middle of an animation
+    // and the door's state implies a different position than what we're showing.
+    if (!this._gateAnimFrame) {
+      const target = isOpen ? 100 : (o.state === 'opening' ? 100 : 0);
+      const current = this._gateOffset != null ? this._gateOffset : 0;
+      if (isMoving) {
+        // Entity says it's moving (HA service or physical button triggered it).
+        // Animate to the target end-state.
+        this._animateGateTo(target);
+      } else if (Math.abs(target - current) > 1) {
+        // Entity is in a steady state but our display is wrong — snap to it
+        // (happens when modal first opens, or after a missed event).
+        this._gateOffset = target;
+        this._applyGatePanels();
+      }
+    }
   }
 
   _gateAction(action) {
     if (!this._hass) return;
     const cover = this._config.garage && this._config.garage.cover;
     if (!cover) return;
-    const svc = action === 'open' ? 'open_cover' : action === 'close' ? 'close_cover' : 'stop_cover';
+
+    // Drive local animation immediately so the user sees feedback even before
+    // HA reports the new state. Real entity state sync happens through
+    // _updateGarageModal on the next hass push.
+    if (action === 'stop') {
+      this._stopGateAnim();
+    } else if (action === 'open') {
+      this._animateGateTo(100);
+    } else if (action === 'close') {
+      this._animateGateTo(0);
+    }
+
+    const svc = action === 'open' ? 'open_cover'
+              : action === 'close' ? 'close_cover'
+              : 'stop_cover';
     this._hass.callService('cover', svc, { entity_id: cover });
   }
 
@@ -3417,6 +3596,11 @@ class SmartHomeDashboardCard extends HTMLElement {
   _closeModal(id) {
     const m = this.shadowRoot.getElementById('shd-' + id + '-modal');
     if (m) m.classList.remove('shd-show');
+    // Stop the gate animation when closing the gate modal so it doesn't keep running.
+    if (id === 'gate' && this._gateAnimFrame) {
+      cancelAnimationFrame(this._gateAnimFrame);
+      this._gateAnimFrame = null;
+    }
   }
 
   _esc(s) {
