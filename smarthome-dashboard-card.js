@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.3.2';
+const CARD_VERSION = '0.3.3';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -3288,8 +3288,7 @@ class SmartHomeDashboardCard extends HTMLElement {
     const m = this.shadowRoot.getElementById('shd-gate-modal');
     if (!m) return;
     m.classList.add('shd-show');
-    // Sync the visual to whatever current state the door is in.
-    // _gateOffset: 0 = fully closed, 100 = fully open.
+    // Sync visual to entity state on first open only.
     if (this._gateOffset == null) {
       this._gateOffset = this._gateOffsetFromState();
       this._applyGatePanels();
@@ -3298,107 +3297,75 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _gateOffsetFromState() {
-    const cover = this._config.garage && this._config.garage.cover;
+    const cover   = this._config.garage && this._config.garage.cover;
     const contact = this._config.garage && this._config.garage.contact;
     if (cover) {
       const s = getState(this._hass, cover);
       if (s === 'open' || s === 'opening') return 100;
-      if (s === 'closed' || s === 'closing') return 0;
     } else if (contact) {
-      const s = getState(this._hass, contact);
-      if (s === 'on') return 100;
-      if (s === 'off') return 0;
+      if (getState(this._hass, contact) === 'on') return 100;
     }
     return 0;
   }
 
-  // Apply the current _gateOffset to the panel SVG elements
+  // Apply _gateOffset (0=closed, 100=open) to all panel SVG elements.
   _applyGatePanels() {
     if (!this.shadowRoot || this._gateOffset == null) return;
-    // moveY scales offset (0..100) to a translation of roughly -126px upward
-    // (matches the HTML preview's 1.26 multiplier — 5 panels × 22px + headroom).
     const moveY = -(this._gateOffset * 1.26);
-    const panels = [
-      { id: 'shd-gp1', baseY: 94 },
-      { id: 'shd-gp2', baseY: 116 },
-      { id: 'shd-gp3', baseY: 138 },
-      { id: 'shd-gp4', baseY: 160 },
-      { id: 'shd-gp5', baseY: 182 },
-    ];
-    const lines = [
-      { id: 'shd-gl1', baseY: 95 },
-      { id: 'shd-gl2', baseY: 117 },
-      { id: 'shd-gl3', baseY: 139 },
-      { id: 'shd-gl4', baseY: 161 },
-      { id: 'shd-gl5', baseY: 183 },
-    ];
-    const handles = [
-      { id: 'shd-gh1', baseY: 148 },
-      { id: 'shd-gh2', baseY: 148 },
-    ];
-    panels.forEach(p => {
-      const el = this.shadowRoot.getElementById(p.id);
-      if (el) el.setAttribute('y', (p.baseY + moveY).toFixed(1));
-    });
-    lines.forEach(l => {
-      const el = this.shadowRoot.getElementById(l.id);
-      if (el) {
-        const y = (l.baseY + moveY).toFixed(1);
-        el.setAttribute('y1', y);
-        el.setAttribute('y2', y);
-      }
-    });
-    handles.forEach(h => {
-      const el = this.shadowRoot.getElementById(h.id);
-      if (el) el.setAttribute('cy', (h.baseY + moveY).toFixed(1));
-    });
+    const panels  = [{id:'shd-gp1',b:94},{id:'shd-gp2',b:116},{id:'shd-gp3',b:138},{id:'shd-gp4',b:160},{id:'shd-gp5',b:182}];
+    const lines   = [{id:'shd-gl1',b:95},{id:'shd-gl2',b:117},{id:'shd-gl3',b:139},{id:'shd-gl4',b:161},{id:'shd-gl5',b:183}];
+    const handles = [{id:'shd-gh1',b:148},{id:'shd-gh2',b:148}];
+    panels.forEach( p => { const el=this.shadowRoot.getElementById(p.id); if(el) el.setAttribute('y',(p.b+moveY).toFixed(1)); });
+    lines.forEach(  l => { const el=this.shadowRoot.getElementById(l.id); if(el){ const y=(l.b+moveY).toFixed(1); el.setAttribute('y1',y); el.setAttribute('y2',y); }});
+    handles.forEach(h => { const el=this.shadowRoot.getElementById(h.id); if(el) el.setAttribute('cy',(h.b+moveY).toFixed(1)); });
   }
 
-  _animateGateTo(targetOffset, explicitDurationMs) {
+  // Speed-based animation matching the original HTML design exactly.
+  // open_speed  = 100 / open_time  (units per second)
+  // close_speed = 100 / close_time (units per second)
+  // Partial moves (stopped at 60%, then reversed) automatically take the
+  // correct proportional time — no extra math needed.
+  _animateGateTo(targetOffset) {
     if (this._gateAnimFrame) {
       cancelAnimationFrame(this._gateAnimFrame);
       this._gateAnimFrame = null;
     }
+    this._gateStopped = false;
+
     const startOffset = this._gateOffset != null ? this._gateOffset : 0;
     if (Math.abs(targetOffset - startOffset) < 0.5) {
       this._gateOffset = targetOffset;
       this._applyGatePanels();
       return;
     }
-    const direction = targetOffset > startOffset ? 1 : -1;
-    const span = Math.abs(targetOffset - startOffset);
 
-    // Full-travel time for this direction (seconds → ms). Opening uses open_time,
-    // closing uses close_time. Partial moves scale proportionally to the span.
     const g = this._config.garage || {};
-    let fullMs;
-    if (explicitDurationMs != null) {
-      fullMs = explicitDurationMs;
-    } else if (direction > 0) {
-      fullMs = (num(g.open_time, 14)) * 1000;
-    } else {
-      fullMs = (num(g.close_time, 14)) * 1000;
-    }
-    const duration = Math.max(200, (span / 100) * fullMs);
+    const direction = targetOffset > startOffset ? 1 : -1;
+    const fullTime  = direction > 0 ? num(g.open_time, 14) : num(g.close_time, 14);
+    const speed     = 100 / Math.max(0.5, fullTime); // units per second
 
     const startTime = performance.now();
     const step = (now) => {
-      const elapsed = now - startTime;
-      const t = Math.min(1, elapsed / duration);
-      // Linear motion matches a real garage door better than easing
-      // (doors move at constant speed, not ease-in-out).
-      this._gateOffset = startOffset + direction * span * t;
-      this._applyGatePanels();
-      const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
-      if (svgText) svgText.textContent = 'STATUS: ' + (direction > 0 ? 'OPENING' : 'CLOSING');
-      const modalStatus = this.shadowRoot.getElementById('shd-gate-modal-status');
-      if (modalStatus) {
-        modalStatus.textContent = direction > 0 ? 'OPENING' : 'CLOSING';
-        modalStatus.style.color = direction > 0 ? '#fbbf24' : '#f97316';
+      const elapsed = (now - startTime) / 1000; // seconds
+      if (direction > 0) {
+        this._gateOffset = Math.min(100, startOffset + elapsed * speed);
+      } else {
+        this._gateOffset = Math.max(0, startOffset - elapsed * speed);
       }
+      this._applyGatePanels();
+
+      const label = direction > 0 ? 'OPENING' : 'CLOSING';
+      const color = direction > 0 ? '#fbbf24' : '#f97316';
+      const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+      if (svgText) svgText.textContent = 'STATUS: ' + label;
+      const st = this.shadowRoot.getElementById('shd-gate-modal-status');
+      if (st) { st.textContent = label; st.style.color = color; }
       const tEl = this.shadowRoot.getElementById('shd-gate-modal-time');
-      if (tEl) tEl.textContent = (elapsed / 1000).toFixed(1) + 's';
-      if (t < 1) {
+      if (tEl) tEl.textContent = elapsed.toFixed(1) + 's';
+
+      const done = (direction > 0 && this._gateOffset >= 100) ||
+                   (direction < 0 && this._gateOffset <= 0);
+      if (!done) {
         this._gateAnimFrame = requestAnimationFrame(step);
       } else {
         this._gateAnimFrame = null;
@@ -3406,10 +3373,10 @@ class SmartHomeDashboardCard extends HTMLElement {
         this._applyGatePanels();
         const finalOpen = targetOffset >= 100;
         if (svgText) svgText.textContent = 'STATUS: ' + (finalOpen ? 'OPEN' : 'CLOSED');
-        if (modalStatus) {
-          modalStatus.textContent = finalOpen ? 'OPEN' : 'CLOSED';
-          modalStatus.style.color = finalOpen ? '#fbbf24' : '#10b981';
-          modalStatus.classList.toggle('shd-open', finalOpen);
+        if (st) {
+          st.textContent = finalOpen ? 'OPEN' : 'CLOSED';
+          st.style.color = finalOpen ? '#fbbf24' : '#10b981';
+          st.classList.toggle('shd-open', finalOpen);
         }
       }
     };
@@ -3417,63 +3384,75 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _stopGateAnim() {
+    // Cancel the rAF — panels stay exactly where they are.
     if (this._gateAnimFrame) {
       cancelAnimationFrame(this._gateAnimFrame);
       this._gateAnimFrame = null;
-      const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
-      if (svgText) svgText.textContent = 'STATUS: STOPPED';
-      const modalStatus = this.shadowRoot.getElementById('shd-gate-modal-status');
-      if (modalStatus) {
-        modalStatus.textContent = 'STOPPED';
-        modalStatus.style.color = '#f87171';
-        modalStatus.classList.remove('shd-open');
-      }
     }
+    // _gateStopped prevents _updateGarageModal from snapping panels to entity
+    // state while the door is physically stopped mid-travel.
+    this._gateStopped = true;
+
+    const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+    if (svgText) svgText.textContent = 'STATUS: STOPPED';
+    const st = this.shadowRoot.getElementById('shd-gate-modal-status');
+    if (st) { st.textContent = 'STOPPED'; st.style.color = '#f87171'; st.classList.remove('shd-open'); }
   }
 
   _updateGarageModal() {
-    const cover = this._config.garage && this._config.garage.cover;
+    const cover   = this._config.garage && this._config.garage.cover;
     const contact = this._config.garage && this._config.garage.contact;
     const eid = cover || contact;
     if (!eid) return;
     const o = getStateObj(this._hass, eid);
     if (!o) return;
-    let label = 'UNKNOWN', isOpen = false, isMoving = false;
+
+    let isOpen = false, isMoving = false, label = 'UNKNOWN';
     if (cover) {
       isOpen   = (o.state === 'open');
       isMoving = (o.state === 'opening' || o.state === 'closing');
-      label = (o.state || 'unknown').toUpperCase();
+      label    = (o.state || 'unknown').toUpperCase();
     } else if (contact) {
       isOpen = (o.state === 'on');
-      label = isOpen ? 'OPEN' : 'CLOSED';
-    }
-    const sEl = this.shadowRoot.getElementById('shd-gate-modal-status');
-    const tEl = this.shadowRoot.getElementById('shd-gate-modal-time');
-    // Only update label here if we're NOT animating ourselves (animation handles its own label updates)
-    if (!this._gateAnimFrame) {
-      if (sEl) {
-        sEl.textContent = label;
-        sEl.classList.toggle('shd-open', isOpen);
-      }
-      if (tEl) tEl.textContent = humanizeTimeAgo(o.last_changed);
-      const svg = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
-      if (svg) svg.textContent = 'STATUS: ' + label;
+      label  = isOpen ? 'OPEN' : 'CLOSED';
     }
 
-    // Sync panel position to actual entity state if we're not in the middle of an animation
-    // and the door's state implies a different position than what we're showing.
+    // --- Label updates ---
+    // Don't touch labels while our own animation is running (it manages them).
+    // Don't touch labels while stopped mid-travel.
+    if (!this._gateAnimFrame && !this._gateStopped) {
+      const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+      if (svgText) svgText.textContent = 'STATUS: ' + label;
+      const st = this.shadowRoot.getElementById('shd-gate-modal-status');
+      if (st) { st.textContent = label; st.classList.toggle('shd-open', isOpen); }
+      const tEl = this.shadowRoot.getElementById('shd-gate-modal-time');
+      if (tEl) tEl.textContent = humanizeTimeAgo(o.last_changed);
+    }
+
+    // --- Panel position sync ---
+    const target  = isOpen ? 100 : 0;
+    const current = this._gateOffset != null ? this._gateOffset : 0;
+
     if (!this._gateAnimFrame) {
-      const target = isOpen ? 100 : (o.state === 'opening' ? 100 : 0);
-      const current = this._gateOffset != null ? this._gateOffset : 0;
-      if (isMoving) {
-        // Entity says it's moving (HA service or physical button triggered it).
-        // Animate to the target end-state.
+      if (this._gateStopped) {
+        // Door is stopped mid-travel. Only clear the stopped state and
+        // sync position once the entity reaches a fully-open or fully-closed
+        // end-state (meaning someone operated it to completion externally).
+        if (!isMoving && Math.abs(target - current) > 90) {
+          this._gateStopped = false;
+          this._gateOffset  = target;
+          this._applyGatePanels();
+        }
+        // Otherwise: do nothing — keep panels exactly where Stop left them.
+      } else if (isMoving) {
+        // HA entity reports it is moving (external trigger: physical button /
+        // automation). Animate to the expected end-state.
         this._animateGateTo(target);
       } else if (Math.abs(target - current) > 1) {
-        // Entity is in a steady state but our display is wrong — snap to it
-        // (happens when modal first opens, or after a missed event).
-        this._gateOffset = target;
-        this._applyGatePanels();
+        // Entity is in a steady end-state but our panels are at a different
+        // position. This normally happens on first open. Animate to sync
+        // rather than snapping for a better visual.
+        this._animateGateTo(target);
       }
     }
   }
@@ -3482,18 +3461,13 @@ class SmartHomeDashboardCard extends HTMLElement {
     if (!this._hass) return;
     const cover = this._config.garage && this._config.garage.cover;
     if (!cover) return;
-
-    // Drive local animation immediately so the user sees feedback even before
-    // HA reports the new state. Real entity state sync happens through
-    // _updateGarageModal on the next hass push.
+    // Drive local animation immediately for instant visual feedback.
     if (action === 'stop') {
       this._stopGateAnim();
-    } else if (action === 'open') {
-      this._animateGateTo(100);
-    } else if (action === 'close') {
-      this._animateGateTo(0);
+    } else {
+      this._gateStopped = false;
+      this._animateGateTo(action === 'open' ? 100 : 0);
     }
-
     const svc = action === 'open' ? 'open_cover'
               : action === 'close' ? 'close_cover'
               : 'stop_cover';
