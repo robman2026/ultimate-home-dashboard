@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.3.3';
+const CARD_VERSION = '0.3.4';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -645,6 +645,7 @@ function getStubConfig() {
       contact: '',
       open_time: 14,
       close_time: 14,
+      trigger_mode: false,
     },
     salt: {
       sensor: '',
@@ -1945,9 +1946,13 @@ class SmartHomeDashboardCard extends HTMLElement {
             <div class="shd-garage-scene">${this._garageSceneSVG()}</div>
             <div class="shd-garage-ctrls">
               <div class="shd-gctrl-label">Control</div>
-              <button class="shd-gctrl-btn shd-open"  data-shd-gate="open">↑ Open</button>
-              <button class="shd-gctrl-btn shd-stop"  data-shd-gate="stop">■ Stop</button>
-              <button class="shd-gctrl-btn shd-close" data-shd-gate="close">↓ Close</button>
+              ${(this._config.garage && this._config.garage.trigger_mode)
+                ? `<button class="shd-gctrl-btn shd-open" data-shd-gate="trigger" style="background:linear-gradient(135deg,#7c3aed,#8b5cf6);">⚡ Trigger</button>
+                   <div style="font-size:9px;color:var(--shd-text-muted);text-align:center;line-height:1.4;margin-top:6px;">Single-button door<br>Each press advances<br>the motor state</div>`
+                : `<button class="shd-gctrl-btn shd-open"  data-shd-gate="open">↑ Open</button>
+                   <button class="shd-gctrl-btn shd-stop"  data-shd-gate="stop">■ Stop</button>
+                   <button class="shd-gctrl-btn shd-close" data-shd-gate="close">↓ Close</button>`
+              }
             </div>
           </div>
           <div class="shd-garage-footer">
@@ -3417,9 +3422,42 @@ class SmartHomeDashboardCard extends HTMLElement {
       label  = isOpen ? 'OPEN' : 'CLOSED';
     }
 
-    // --- Label updates ---
-    // Don't touch labels while our own animation is running (it manages them).
-    // Don't touch labels while stopped mid-travel.
+    const triggerMode = !!(this._config.garage && this._config.garage.trigger_mode);
+
+    if (triggerMode) {
+      // In trigger mode the animation is driven entirely by the contact sensor flipping.
+      // We track the previous stable state and start the animation when it changes.
+      const prevStable = this._gatePrevStable;
+      const nowStable  = isOpen ? 'open' : 'closed';
+      if (prevStable !== undefined && prevStable !== nowStable) {
+        // Contact sensor just flipped — door finished travelling to a new end-state.
+        // Start the animation from wherever the panels are to the new target.
+        this._gateStopped = false;
+        this._animateGateTo(isOpen ? 100 : 0);
+      }
+      this._gatePrevStable = nowStable;
+
+      // Sync initial position on first open (no previous state yet)
+      if (this._gateOffset == null) {
+        this._gateOffset = isOpen ? 100 : 0;
+        this._applyGatePanels();
+      }
+
+      // Update labels only when not animating
+      if (!this._gateAnimFrame) {
+        const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+        if (svgText) svgText.textContent = 'STATUS: ' + label;
+        const st = this.shadowRoot.getElementById('shd-gate-modal-status');
+        if (st) { st.textContent = label; st.classList.toggle('shd-open', isOpen); }
+        const tEl = this.shadowRoot.getElementById('shd-gate-modal-time');
+        if (tEl) tEl.textContent = humanizeTimeAgo(o.last_changed);
+      }
+      return;
+    }
+
+    // --- Standard 3-command mode ---
+
+    // Label updates (skip while our animation or stop flag is active)
     if (!this._gateAnimFrame && !this._gateStopped) {
       const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
       if (svgText) svgText.textContent = 'STATUS: ' + label;
@@ -3429,29 +3467,20 @@ class SmartHomeDashboardCard extends HTMLElement {
       if (tEl) tEl.textContent = humanizeTimeAgo(o.last_changed);
     }
 
-    // --- Panel position sync ---
+    // Panel position sync
     const target  = isOpen ? 100 : 0;
     const current = this._gateOffset != null ? this._gateOffset : 0;
-
     if (!this._gateAnimFrame) {
       if (this._gateStopped) {
-        // Door is stopped mid-travel. Only clear the stopped state and
-        // sync position once the entity reaches a fully-open or fully-closed
-        // end-state (meaning someone operated it to completion externally).
+        // Clear stopped state when entity definitively reaches an end-state
         if (!isMoving && Math.abs(target - current) > 90) {
           this._gateStopped = false;
           this._gateOffset  = target;
           this._applyGatePanels();
         }
-        // Otherwise: do nothing — keep panels exactly where Stop left them.
       } else if (isMoving) {
-        // HA entity reports it is moving (external trigger: physical button /
-        // automation). Animate to the expected end-state.
         this._animateGateTo(target);
       } else if (Math.abs(target - current) > 1) {
-        // Entity is in a steady end-state but our panels are at a different
-        // position. This normally happens on first open. Animate to sync
-        // rather than snapping for a better visual.
         this._animateGateTo(target);
       }
     }
@@ -3461,7 +3490,16 @@ class SmartHomeDashboardCard extends HTMLElement {
     if (!this._hass) return;
     const cover = this._config.garage && this._config.garage.cover;
     if (!cover) return;
-    // Drive local animation immediately for instant visual feedback.
+
+    if (action === 'trigger') {
+      // Single-button door: just pulse the cover open service (which we've mapped
+      // to the same pulse regardless of direction in the fixed template cover).
+      // The animation will respond when the contact sensor actually flips.
+      this._hass.callService('cover', 'open_cover', { entity_id: cover });
+      return;
+    }
+
+    // Standard 3-command mode
     if (action === 'stop') {
       this._stopGateAnim();
     } else {
@@ -4073,8 +4111,14 @@ class SmartHomeDashboardCardEditor extends LitElement {
           onChange: (v) => this._setDeep(['garage', 'close_time'], v === '' ? null : Number(v)),
         })}
       </div>
+      ${this._toggle({
+        label: 'Trigger mode (single-button door)',
+        help: 'Enable if your door uses a single pulse button (motor decides open/close). Replaces Open/Stop/Close with one Trigger button.',
+        checked: !!g.trigger_mode,
+        onChange: (v) => this._setDeep(['garage', 'trigger_mode'], v),
+      })}
       <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:4px;line-height:1.5;">
-        Measure how long your door takes to fully open / close, so the animation matches real speed. Decimals allowed (e.g. 17.5).
+        💡 <strong>Single-button doors:</strong> enable Trigger mode and map all three cover actions to the same pulse in your <code>configuration.yaml</code>. The animation responds to the contact sensor flipping.
       </div>
     `);
   }
