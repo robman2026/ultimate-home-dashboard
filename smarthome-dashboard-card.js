@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.3.1';
+const CARD_VERSION = '0.3.2';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -643,6 +643,8 @@ function getStubConfig() {
     garage: {
       cover: '',
       contact: '',
+      open_time: 14,
+      close_time: 14,
     },
     salt: {
       sensor: '',
@@ -2980,12 +2982,26 @@ class SmartHomeDashboardCard extends HTMLElement {
 
   _updateClock() {
     if (!this.shadowRoot) return;
-    const timeEl = this.shadowRoot.querySelector('.shd-topbar-time');
-    if (!timeEl) return;
     const now = new Date();
     const hh = String(now.getHours()).padStart(2, '0');
     const mm = String(now.getMinutes()).padStart(2, '0');
-    timeEl.textContent = `${hh}:${mm}`;
+    const hhmm = `${hh}:${mm}`;
+
+    // Topbar time (top-right)
+    const timeEl = this.shadowRoot.querySelector('.shd-topbar-time');
+    if (timeEl) timeEl.textContent = hhmm;
+
+    // Big clock card (left column)
+    const bigTime = this.shadowRoot.getElementById('shd-clock-time');
+    if (bigTime) bigTime.textContent = hhmm;
+
+    // Date line under the big clock
+    const dateEl = this.shadowRoot.getElementById('shd-clock-date');
+    if (dateEl) {
+      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      dateEl.textContent = days[now.getDay()] + ', ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+    }
   }
 
   /* ════════════════════════════════════════════════════════════════
@@ -3338,7 +3354,7 @@ class SmartHomeDashboardCard extends HTMLElement {
     });
   }
 
-  _animateGateTo(targetOffset, durationMs = 4000) {
+  _animateGateTo(targetOffset, explicitDurationMs) {
     if (this._gateAnimFrame) {
       cancelAnimationFrame(this._gateAnimFrame);
       this._gateAnimFrame = null;
@@ -3349,30 +3365,37 @@ class SmartHomeDashboardCard extends HTMLElement {
       this._applyGatePanels();
       return;
     }
-    const startTime = performance.now();
-    // Speed proportional to distance so opening from 50% takes half the time
-    const span = Math.abs(targetOffset - startOffset);
-    const duration = Math.max(300, (span / 100) * durationMs);
     const direction = targetOffset > startOffset ? 1 : -1;
+    const span = Math.abs(targetOffset - startOffset);
 
+    // Full-travel time for this direction (seconds → ms). Opening uses open_time,
+    // closing uses close_time. Partial moves scale proportionally to the span.
+    const g = this._config.garage || {};
+    let fullMs;
+    if (explicitDurationMs != null) {
+      fullMs = explicitDurationMs;
+    } else if (direction > 0) {
+      fullMs = (num(g.open_time, 14)) * 1000;
+    } else {
+      fullMs = (num(g.close_time, 14)) * 1000;
+    }
+    const duration = Math.max(200, (span / 100) * fullMs);
+
+    const startTime = performance.now();
     const step = (now) => {
       const elapsed = now - startTime;
       const t = Math.min(1, elapsed / duration);
-      // ease-in-out cubic for slight realism
-      const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      this._gateOffset = startOffset + direction * span * eased;
+      // Linear motion matches a real garage door better than easing
+      // (doors move at constant speed, not ease-in-out).
+      this._gateOffset = startOffset + direction * span * t;
       this._applyGatePanels();
-      // Update SVG status text while moving
       const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
-      if (svgText) {
-        svgText.textContent = 'STATUS: ' + (direction > 0 ? 'OPENING' : 'CLOSING');
-      }
+      if (svgText) svgText.textContent = 'STATUS: ' + (direction > 0 ? 'OPENING' : 'CLOSING');
       const modalStatus = this.shadowRoot.getElementById('shd-gate-modal-status');
       if (modalStatus) {
         modalStatus.textContent = direction > 0 ? 'OPENING' : 'CLOSING';
         modalStatus.style.color = direction > 0 ? '#fbbf24' : '#f97316';
       }
-      // Update last-change-time field to show movement time
       const tEl = this.shadowRoot.getElementById('shd-gate-modal-time');
       if (tEl) tEl.textContent = (elapsed / 1000).toFixed(1) + 's';
       if (t < 1) {
@@ -3381,7 +3404,6 @@ class SmartHomeDashboardCard extends HTMLElement {
         this._gateAnimFrame = null;
         this._gateOffset = targetOffset;
         this._applyGatePanels();
-        // Final status label
         const finalOpen = targetOffset >= 100;
         if (svgText) svgText.textContent = 'STATUS: ' + (finalOpen ? 'OPEN' : 'CLOSED');
         if (modalStatus) {
@@ -4061,6 +4083,25 @@ class SmartHomeDashboardCardEditor extends LitElement {
         placeholder: 'binary_sensor.garage_door_contact',
         onChange: (v) => this._setDeep(['garage', 'contact'], v),
       })}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        ${this._textField({
+          label: 'Open time (seconds)',
+          value: g.open_time != null ? String(g.open_time) : '',
+          placeholder: '10',
+          type: 'number',
+          onChange: (v) => this._setDeep(['garage', 'open_time'], v === '' ? null : Number(v)),
+        })}
+        ${this._textField({
+          label: 'Close time (seconds)',
+          value: g.close_time != null ? String(g.close_time) : '',
+          placeholder: '17.5',
+          type: 'number',
+          onChange: (v) => this._setDeep(['garage', 'close_time'], v === '' ? null : Number(v)),
+        })}
+      </div>
+      <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:4px;line-height:1.5;">
+        Measure how long your door takes to fully open / close, so the animation matches real speed. Decimals allowed (e.g. 17.5).
+      </div>
     `);
   }
 
