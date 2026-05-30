@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.4.4';
+const CARD_VERSION = '0.4.5';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -1948,30 +1948,46 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _render() {
-    const cfg = this._config;
-    this.shadowRoot.innerHTML = `
-      <style>${CARD_STYLES}</style>
-      <div class="shd-root">
-        ${this._configError ? `
-          <div style="padding:24px;color:#ef4444;font-family:monospace;font-size:13px;background:#1a0505;border:1px solid #ef4444;border-radius:12px;margin:12px;">
-            <strong>⚠ Smart Home Dashboard Card — Config Error</strong><br><br>
-            ${this._esc(this._configError)}<br><br>
-            <span style="opacity:0.6;font-size:11px;">Check browser console for full details. This error occurred in setConfig().</span>
+    try {
+      const cfg = this._config;
+      this.shadowRoot.innerHTML = `
+        <style>${CARD_STYLES}</style>
+        <div class="shd-root">
+          ${this._configError ? `
+            <div style="padding:24px;color:#ef4444;font-family:monospace;font-size:13px;background:#1a0505;border:1px solid #ef4444;border-radius:12px;margin:12px;">
+              <strong>⚠ Smart Home Dashboard Card — Config Error</strong><br><br>
+              ${this._esc(this._configError)}<br><br>
+              <span style="opacity:0.6;font-size:11px;">Check browser console for full details.</span>
+            </div>
+          ` : `
+          <div class="shd-app">
+            ${this._renderTopbar()}
+            ${this._renderMain()}
           </div>
-        ` : `
-        <div class="shd-app">
-          ${this._renderTopbar()}
-          ${this._renderMain()}
+          ${this._renderModals()}
+          `}
         </div>
-        ${this._renderModals()}
-        `}
-      </div>
-    `;
-    if (!this._configError) {
-      this._attachListeners();
-      this._startResizeObserver();
-      this._updateClock();
-      this._renderRooms();
+      `;
+      if (!this._configError) {
+        this._attachListeners();
+        this._startResizeObserver();
+        this._updateClock();
+        this._renderRooms();
+      }
+    } catch (e) {
+      console.error('[shd] _render() crashed:', e);
+      try {
+        this.shadowRoot.innerHTML = `
+          <style>:host{display:block;}</style>
+          <div style="padding:24px;color:#ef4444;font-family:monospace;font-size:12px;background:#1a0505;border:1px solid #ef4444;border-radius:12px;margin:12px;">
+            <strong>⚠ smarthome-dashboard-card render error</strong><br><br>
+            ${String(e && e.message || e)}<br><br>
+            <span style="opacity:0.6;font-size:11px;">
+              Line: ${e && e.stack ? e.stack.split('\n')[1] : 'unknown'}<br>
+              Check browser console for [shd] messages.
+            </span>
+          </div>`;
+      } catch (_) {}
     }
   }
 
