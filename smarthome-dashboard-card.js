@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.4.0';
+const CARD_VERSION = '0.4.1';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -2521,7 +2521,6 @@ class SmartHomeDashboardCard extends HTMLElement {
         <div class="shd-section-label" style="margin-bottom:0;">
           <div class="shd-section-dot" style="background:var(--shd-accent-green);"></div>
           Automower
-          <span style="margin-left:auto;font-size:9px;font-weight:400;background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:5px;color:var(--shd-text-muted);text-transform:none;letter-spacing:0;font-family:var(--shd-mono);">${this._esc(eid)}</span>
         </div>
         <div class="shd-mower-head">
           <div id="shd-mower-svg"></div>
@@ -3715,25 +3714,61 @@ class SmartHomeDashboardCard extends HTMLElement {
     const wrap = this.shadowRoot.getElementById('shd-pmod-chart-wrap');
     if (!wrap) return;
     const cfg = this._config.power || {};
+
     if (!cfg.energy_sensor) {
-      wrap.innerHTML = '<div class="shd-pmod-error">Configure <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;color:var(--shd-accent-gold);">power.energy_sensor</code> to see the monthly chart.</div>';
+      wrap.innerHTML = '<div class="shd-pmod-error">Set <strong>Cumulative energy sensor</strong> in Editor → ⚡ Main Power.</div>';
       return;
     }
-    // Use cached values if available within the last hour
+
+    // Check API availability first
+    if (!this._hass || !this._hass.callApi) {
+      wrap.innerHTML = '<div class="shd-pmod-error">HA callApi not available (HA version too old?).</div>';
+      return;
+    }
+
+    // Verify entity exists
+    const entityState = getStateObj(this._hass, cfg.energy_sensor);
+    if (!entityState) {
+      wrap.innerHTML = `<div class="shd-pmod-error">Entity <code>${this._esc(cfg.energy_sensor)}</code> not found in HA states.<br>Check the entity name in Developer Tools → States.</div>`;
+      return;
+    }
+    const curVal = num(entityState.state);
+    if (curVal === null) {
+      wrap.innerHTML = `<div class="shd-pmod-error">Entity <code>${this._esc(cfg.energy_sensor)}</code> has non-numeric state: <strong>${this._esc(entityState.state)}</strong>.<br>This must be a kWh sensor.</div>`;
+      return;
+    }
+
+    // Use cached values if within last hour
     if (this._monthlyChartData && this._monthlyChartCacheAt && (Date.now() - this._monthlyChartCacheAt) < 60 * 60 * 1000) {
       this._renderMonthlyChart(this._monthlyChartData);
       return;
     }
-    // Show loader while fetching
-    wrap.innerHTML = '<div class="shd-pmod-loading"><div class="shd-pmod-spinner"></div>Loading monthly history…</div>';
+
+    wrap.innerHTML = '<div class="shd-pmod-loading"><div class="shd-pmod-spinner"></div>Loading monthly history for <code>' + this._esc(cfg.energy_sensor) + '</code>…</div>';
 
     try {
       const data = await this._fetchMonthlyHistory(cfg.energy_sensor);
+      // Check if we got any real data at all
+      const hasData = data.some(m => m.value !== null);
+      if (!hasData) {
+        // Show a diagnostic message with the entity current value
+        wrap.innerHTML = `<div class="shd-pmod-error">
+          History returned no data for <code>${this._esc(cfg.energy_sensor)}</code>.<br>
+          Current value: <strong>${curVal} kWh</strong><br><br>
+          This usually means:<br>
+          • HA recorder hasn't stored enough history (needs data going back to each month boundary)<br>
+          • The entity name is wrong — check Developer Tools → States<br>
+          • History API returned 403 (check HA logs)<br><br>
+          Check browser console for <code>[shd]</code> debug messages.
+        </div>`;
+        return;
+      }
       this._monthlyChartData = data;
       this._monthlyChartCacheAt = Date.now();
       this._renderMonthlyChart(data);
     } catch (e) {
-      wrap.innerHTML = '<div class="shd-pmod-error">Failed to load history.<br><span style="font-size:10px;opacity:0.6;">' + this._esc(e && e.message || 'unknown error') + '</span></div>';
+      console.error('[shd] monthly chart error:', e);
+      wrap.innerHTML = '<div class="shd-pmod-error">History fetch failed: <strong>' + this._esc(e && e.message || String(e)) + '</strong><br>Check browser console for details.</div>';
     }
   }
 
@@ -4598,33 +4633,45 @@ class SmartHomeDashboardCardEditor extends LitElement {
   /* — Power — */
   _renderPower() {
     const p = this._config.power || {};
+    // Show current entity values to help user confirm they've picked the right ones
+    const todayVal = p.today_energy_sensor && this.hass ? num(this.hass.states[p.today_energy_sensor]?.state) : null;
+    const cumVal   = p.energy_sensor && this.hass ? num(this.hass.states[p.energy_sensor]?.state) : null;
+    const todayHint = todayVal !== null ? ` — current value: ${todayVal.toFixed(1)} kWh (expect < 50 kWh for a daily sensor)` : '';
+    const cumHint   = cumVal   !== null ? ` — current value: ${cumVal.toFixed(1)} kWh (expect hundreds/thousands for lifetime)` : '';
+
     return this._sectionShell('power', '⚡ Main Power', null, html`
       ${this._entityPicker({
-        label: 'Power sensor (instantaneous W / kW)',
+        label: 'Power sensor — live watts (W or kW)',
         value: p.power_sensor,
         domains: ['sensor'],
         placeholder: 'sensor.em_home_power',
         onChange: (v) => this._setDeep(['power', 'power_sensor'], v),
       })}
+
+      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.7);margin:10px 0 4px;">📅 Today's usage</div>
       ${this._entityPicker({
-        label: "Today's energy — daily reset kWh sensor",
+        label: `Daily sensor — resets to 0 every midnight${todayHint}`,
         value: p.today_energy_sensor,
         domains: ['sensor'],
         placeholder: 'sensor.em_home_energy',
         onChange: (v) => this._setDeep(['power', 'today_energy_sensor'], v),
       })}
+
+      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.7);margin:10px 0 4px;">📊 Monthly chart (last 12 months)</div>
       ${this._entityPicker({
-        label: 'Cumulative energy — lifetime kWh (never resets) — required for monthly chart',
+        label: `Lifetime sensor — never resets, always growing${cumHint}`,
         value: p.energy_sensor,
         domains: ['sensor'],
-        placeholder: 'sensor.em_home_energy_consumed',
+        placeholder: 'sensor.em_home_total_energy',
         onChange: (v) => this._setDeep(['power', 'energy_sensor'], v),
       })}
-      <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:6px;line-height:1.6;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
-        <strong style="color:rgba(255,255,255,0.7);">Why two energy sensors?</strong><br>
-        The <em>Today</em> sensor resets to 0 at midnight — great for "today's usage".<br>
-        The <em>Cumulative</em> sensor never resets — monthly chart subtracts readings at month boundaries to get each month's delta.<br>
-        For EM Home: check Developer Tools → States for <code>sensor.em_home_energy_consumed</code> or similar lifetime entities.
+
+      <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:6px;line-height:1.6;background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;">
+        <strong>How to find the right entities:</strong><br>
+        Developer Tools → States → search <code>em_home</code><br>
+        • Small number (&lt;50 kWh) that resets at midnight = <strong>Today's sensor</strong><br>
+        • Large number (hundreds/thousands kWh) that only ever grows = <strong>Monthly chart sensor</strong><br>
+        These are almost certainly two different entities.
       </div>
     `);
   }
