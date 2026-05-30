@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.3.9';
+const CARD_VERSION = '0.4.0';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -1894,7 +1894,12 @@ class SmartHomeDashboardCard extends HTMLElement {
     }
 
     if (this._built) {
-      this._lastRoomsSig = null; // config may have changed rooms
+      this._lastRoomsSig = null;
+      // Clear energy fetch cache so new entity takes effect immediately
+      this._energyFetchAt = null;
+      this._energyData = null;
+      this._monthlyChartData = null;
+      this._monthlyChartCacheAt = null;
       this._render();
     }
   }
@@ -3053,45 +3058,47 @@ class SmartHomeDashboardCard extends HTMLElement {
     const cfg = this._config.power || {};
     if (!cfg.energy_sensor || !this._hass) return;
     const now = Date.now();
-    if (this._energyFetchAt && (now - this._energyFetchAt) < 5 * 60 * 1000) return; // throttle 5min
+    if (this._energyFetchAt && (now - this._energyFetchAt) < 5 * 60 * 1000) return;
     this._energyFetchAt = now;
     this._fetchEnergyTotals(cfg.energy_sensor).then(data => {
       this._energyData = data;
-      // re-patch the power widget once we have data
       this._updatePower();
-    }).catch(() => { /* swallow */ });
+    }).catch(() => {});
   }
 
   async _fetchEnergyTotals(entityId) {
-    // Get cumulative kWh value at: start-of-today, start-of-month, and right now.
-    // Then today = now - todayStart, month = now - monthStart.
     if (!this._hass || !this._hass.callApi) return null;
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Get the current value directly from state (no API needed)
     const cur = getStateObj(this._hass, entityId);
     const curVal = cur ? num(cur.state) : null;
     if (curVal === null) return { today: null, month: null };
 
-    const fetchAt = async (date) => {
+    const now       = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Fetch the last known value BEFORE a given timestamp (look backward up to 24h).
+    const fetchBefore = async (beforeDate) => {
       try {
-        const start = date.toISOString();
-        // 1h window after start to catch the first value
-        const end = new Date(date.getTime() + 60 * 60 * 1000).toISOString();
-        const url = `history/period/${start}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${encodeURIComponent(end)}&minimal_response`;
+        // end_time = boundary, look back up to 24h for the last recorded state
+        const startISO = new Date(beforeDate.getTime() - 24 * 60 * 60 * 1000).toISOString();
+        const endISO   = beforeDate.toISOString();
+        const url = `history/period/${startISO}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${encodeURIComponent(endISO)}&minimal_response&no_attributes`;
         const result = await this._hass.callApi('GET', url);
         if (Array.isArray(result) && result.length > 0 && result[0].length > 0) {
-          const first = result[0][0];
-          const v = num(first.s !== undefined ? first.s : first.state);
+          // Take the LAST entry in the window (closest to the boundary)
+          const last = result[0][result[0].length - 1];
+          const v = num(last.s !== undefined ? last.s : last.state);
           return v;
         }
-      } catch (_) { /* ignore */ }
+      } catch (e) { console.warn('[shd] fetchBefore failed:', e); }
       return null;
     };
 
     const [todayStartVal, monthStartVal] = await Promise.all([
-      fetchAt(todayStart),
-      fetchAt(monthStart),
+      fetchBefore(todayStart),
+      fetchBefore(monthStart),
     ]);
 
     return {
@@ -3731,47 +3738,63 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   async _fetchMonthlyHistory(entityId) {
-    if (!this._hass || !this._hass.callApi) throw new Error('hass not ready');
-    const now = new Date();
-    // Build 13 boundary timestamps (start-of-month for the next 12+ months)
-    const boundaries = [];
-    for (let i = 12; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      boundaries.push(d);
-    }
-    boundaries.push(now); // current value
+    if (!this._hass || !this._hass.callApi) throw new Error('hass.callApi not available');
 
-    const fetchAt = async (date) => {
+    const now = new Date();
+
+    // Get current live value directly from state
+    const cur = getStateObj(this._hass, entityId);
+    const curVal = cur ? num(cur.state) : null;
+    if (curVal === null) throw new Error(`Entity ${entityId} has no numeric state`);
+
+    // Build 12 month-start boundaries (oldest first) plus "now" as the final value
+    const boundaries = [];
+    for (let i = 12; i >= 1; i--) {
+      boundaries.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+    }
+    // Current month start
+    boundaries.push(new Date(now.getFullYear(), now.getMonth(), 1));
+    // Current value (no fetch needed — use curVal)
+
+    // Fetch the last recorded state BEFORE each boundary (look back up to 48h)
+    const fetchBefore = async (beforeDate) => {
       try {
-        const start = date.toISOString();
-        const end = new Date(date.getTime() + 60 * 60 * 1000).toISOString();
-        const url = `history/period/${start}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${encodeURIComponent(end)}&minimal_response`;
+        const startISO = new Date(beforeDate.getTime() - 48 * 60 * 60 * 1000).toISOString();
+        const endISO   = beforeDate.toISOString();
+        const url = `history/period/${startISO}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${encodeURIComponent(endISO)}&minimal_response&no_attributes`;
         const result = await this._hass.callApi('GET', url);
         if (Array.isArray(result) && result.length > 0 && result[0].length > 0) {
-          const first = result[0][0];
-          const v = num(first.s !== undefined ? first.s : first.state);
-          return v;
+          const last = result[0][result[0].length - 1];
+          return num(last.s !== undefined ? last.s : last.state);
         }
-      } catch (_) { /* ignore */ }
+      } catch (e) {
+        console.warn('[shd] monthly history fetch failed for', beforeDate.toISOString(), e);
+      }
       return null;
     };
 
-    // Fetch readings at every boundary in parallel
-    const values = await Promise.all(boundaries.map(fetchAt));
+    // Fetch all boundaries in parallel
+    const boundaryVals = await Promise.all(boundaries.map(fetchBefore));
 
-    // Compute deltas: months[i] = values[i+1] - values[i]
-    const months = [];
+    // Append current value as the final "after last month start" reading
+    const allVals = [...boundaryVals, curVal];
+
+    // Compute deltas: months[i] = allVals[i+1] - allVals[i]
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const months = [];
     for (let i = 0; i < 12; i++) {
-      const a = values[i];
-      const b = values[i + 1];
+      const a = allVals[i];      // start-of-month value
+      const b = allVals[i + 1];  // start-of-next-month value (or current)
       const d = boundaries[i];
       const delta = (a !== null && b !== null) ? Math.max(0, b - a) : null;
       months.push({
-        label: monthNames[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2),
+        label: monthNames[d.getMonth()] + ' \'' + String(d.getFullYear()).slice(2),
         value: delta,
+        isCurrent: i === 11,
       });
     }
+
+    console.info('[shd] monthly history for', entityId, ':', months);
     return months;
   }
 
@@ -3782,9 +3805,13 @@ class SmartHomeDashboardCard extends HTMLElement {
     const html = '<div class="shd-pmod-chart">' + months.map(m => {
       const v = m.value;
       const h = v !== null ? Math.max(2, Math.round((v / max) * 160)) : 2;
+      const isCurrent = !!m.isCurrent;
+      const barColor = isCurrent
+        ? 'linear-gradient(180deg, rgba(245,158,11,0.5), rgba(245,158,11,0.2))'
+        : 'linear-gradient(180deg, #f59e0b, rgba(245,158,11,0.4))';
       return '<div class="shd-pmod-bar">' +
         '<div class="shd-pmod-bar-val">' + (v !== null ? Math.round(v) : '—') + '</div>' +
-        '<div class="shd-pmod-bar-fill" style="height:' + h + 'px;"></div>' +
+        '<div class="shd-pmod-bar-fill" style="height:' + h + 'px;background:' + barColor + ';' + (isCurrent ? 'border:1px dashed rgba(245,158,11,0.5);border-bottom:none;' : '') + '"></div>' +
         '<div class="shd-pmod-bar-lbl">' + this._esc(m.label) + '</div>' +
         '</div>';
     }).join('') + '</div>';
