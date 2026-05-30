@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.4.5';
+const CARD_VERSION = '0.4.2';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -669,7 +669,8 @@ function getStubConfig() {
     },
     power: {
       power_sensor: '',
-      energy_sensor: '',
+      energy_sensor: '',           // lifetime cumulative kWh — for monthly chart deltas
+      today_energy_sensor: '',     // daily-reset kWh — for "Today" stat (optional; if blank, derived from cumulative)
     },
     floors: [
       { id: 'garden',   label: 'Garden',       icon: '🌿', rooms: [] },
@@ -1857,54 +1858,49 @@ class SmartHomeDashboardCard extends HTMLElement {
   setConfig(config) {
     if (!config) throw new Error('Invalid configuration');
 
-    try {
-      // Deep merge with stub config so users only need to provide what they want to change.
-      const stub = getStubConfig();
-      this._configError = null; // clear any previous error
-      this._config = {
-        ...stub,
-        ...config,
-        header:       { ...stub.header,       ...(config.header || {}) },
-        garage:       { ...stub.garage,       ...(config.garage || {}) },
-        salt:         { ...stub.salt,         ...(config.salt || {}) },
-        mower:        { ...stub.mower,        ...(config.mower || {}) },
-        media:        { ...stub.media,        ...(config.media || {}) },
-        surveillance: { ...stub.surveillance, ...(config.surveillance || {}) },
-        power:        { ...stub.power,        ...(config.power || {}) },
-      };
-      if (this._config.media && config.media && config.media.apps) {
-        this._config.media.apps = { ...stub.media.apps, ...config.media.apps };
-      }
-      // Floors: replace whole array if user provides one, then normalize to canonical shape.
-      if (config.floors && Array.isArray(config.floors) && config.floors.length > 0) {
-        const normalized = normalizeFloors(config.floors);
-        if (normalized) this._config.floors = normalized;
-      } else {
-        this._config.floors = normalizeFloors(this._config.floors) || [];
-      }
+    // Deep merge with stub config so users only need to provide what they want to change.
+    const stub = getStubConfig();
+    this._config = {
+      ...stub,
+      ...config,
+      header:       { ...stub.header,       ...(config.header || {}) },
+      garage:       { ...stub.garage,       ...(config.garage || {}) },
+      salt:         { ...stub.salt,         ...(config.salt || {}) },
+      mower:        { ...stub.mower,        ...(config.mower || {}) },
+      media:        { ...stub.media,        ...(config.media || {}) },
+      surveillance: { ...stub.surveillance, ...(config.surveillance || {}) },
+      power:        { ...stub.power,        ...(config.power || {}) },
+    };
+    if (this._config.media && config.media && config.media.apps) {
+      this._config.media.apps = { ...stub.media.apps, ...config.media.apps };
+    }
+    // Floors: replace whole array if user provides one, then normalize to canonical shape.
+    // We accept {id,label,icon} (strict), {name,icon} (HA-natural), or {id,name,icon} (both).
+    if (config.floors && Array.isArray(config.floors) && config.floors.length > 0) {
+      const normalized = normalizeFloors(config.floors);
+      if (normalized) this._config.floors = normalized;
+    } else {
+      // Stub floors are already canonical; normalize defensively anyway.
+      this._config.floors = normalizeFloors(this._config.floors) || [];
+    }
 
-      // Determine initial floor
-      const validFloorIds = this._config.floors.map(f => f.id);
-      if (!this._currentFloor || !validFloorIds.includes(this._currentFloor)) {
-        this._currentFloor = (validFloorIds.includes(this._config.default_floor))
-          ? this._config.default_floor
-          : (validFloorIds[0] || null);
-      }
+    // Determine initial floor: prefer default_floor if it matches a configured floor;
+    // otherwise fall back to the first floor (never show "Unknown").
+    const validFloorIds = this._config.floors.map(f => f.id);
+    if (!this._currentFloor || !validFloorIds.includes(this._currentFloor)) {
+      this._currentFloor = (validFloorIds.includes(this._config.default_floor))
+        ? this._config.default_floor
+        : (validFloorIds[0] || null);
+    }
 
-      if (this._built) {
-        this._lastRoomsSig = null;
-        this._energyFetchAt = null;
-        this._energyData = null;
-        this._monthlyChartData = null;
-        this._monthlyChartCacheAt = null;
-        this._render();
-      }
-    } catch (e) {
-      console.error('[shd] setConfig error:', e);
-      // Store a minimal working config so the card renders an error instead of going blank
-      this._config = this._config || getStubConfig();
-      this._configError = e.message || String(e);
-      if (this._built) this._render();
+    if (this._built) {
+      this._lastRoomsSig = null;
+      // Clear energy fetch cache so new entity takes effect immediately
+      this._energyFetchAt = null;
+      this._energyData = null;
+      this._monthlyChartData = null;
+      this._monthlyChartCacheAt = null;
+      this._render();
     }
   }
 
@@ -1948,47 +1944,22 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _render() {
-    try {
-      const cfg = this._config;
-      this.shadowRoot.innerHTML = `
-        <style>${CARD_STYLES}</style>
-        <div class="shd-root">
-          ${this._configError ? `
-            <div style="padding:24px;color:#ef4444;font-family:monospace;font-size:13px;background:#1a0505;border:1px solid #ef4444;border-radius:12px;margin:12px;">
-              <strong>⚠ Smart Home Dashboard Card — Config Error</strong><br><br>
-              ${this._esc(this._configError)}<br><br>
-              <span style="opacity:0.6;font-size:11px;">Check browser console for full details.</span>
-            </div>
-          ` : `
-          <div class="shd-app">
-            ${this._renderTopbar()}
-            ${this._renderMain()}
-          </div>
-          ${this._renderModals()}
-          `}
+    const cfg = this._config;
+    this.shadowRoot.innerHTML = `
+      <style>${CARD_STYLES}</style>
+      <div class="shd-root">
+        <div class="shd-app">
+          ${this._renderTopbar()}
+          ${this._renderMain()}
         </div>
-      `;
-      if (!this._configError) {
-        this._attachListeners();
-        this._startResizeObserver();
-        this._updateClock();
-        this._renderRooms();
-      }
-    } catch (e) {
-      console.error('[shd] _render() crashed:', e);
-      try {
-        this.shadowRoot.innerHTML = `
-          <style>:host{display:block;}</style>
-          <div style="padding:24px;color:#ef4444;font-family:monospace;font-size:12px;background:#1a0505;border:1px solid #ef4444;border-radius:12px;margin:12px;">
-            <strong>⚠ smarthome-dashboard-card render error</strong><br><br>
-            ${String(e && e.message || e)}<br><br>
-            <span style="opacity:0.6;font-size:11px;">
-              Line: ${e && e.stack ? e.stack.split('\n')[1] : 'unknown'}<br>
-              Check browser console for [shd] messages.
-            </span>
-          </div>`;
-      } catch (_) {}
-    }
+        ${this._renderModals()}
+      </div>
+    `;
+    this._attachListeners();
+    this._startResizeObserver();
+    this._updateClock();
+    // Initial rooms render (data comes from current floor)
+    this._renderRooms();
   }
 
   _renderModals() {
@@ -3024,7 +2995,7 @@ class SmartHomeDashboardCard extends HTMLElement {
       bat = num(getState(this._hass, cfg.battery_entity));
     }
     if (bat === null) {
-      bat = (num(a.battery_level) !== null ? num(a.battery_level) : (num(a.battery) !== null ? num(a.battery) : num(a.battery_pct)));
+      bat = num(a.battery_level) ?? num(a.battery) ?? num(a.battery_pct);
     }
 
     const batEl    = this.shadowRoot.getElementById('shd-mower-bat');
@@ -3062,10 +3033,10 @@ class SmartHomeDashboardCard extends HTMLElement {
     }
 
     // Today — use today_energy_sensor directly if configured (daily-reset entity)
-    const todaySensor = cfg.today_energy_sensor && cfg.today_energy_sensor.trim();
+    const todayEl = this.shadowRoot.getElementById('shd-power-today');
     if (todayEl) {
-      if (todaySensor) {
-        const todayVal = num(getState(this._hass, todaySensor));
+      if (cfg.today_energy_sensor) {
+        const todayVal = num(getState(this._hass, cfg.today_energy_sensor));
         todayEl.textContent = todayVal !== null ? todayVal.toFixed(1) + ' kWh' : '—';
       } else {
         todayEl.textContent = (this._energyData && this._energyData.today != null)
@@ -3146,54 +3117,56 @@ class SmartHomeDashboardCard extends HTMLElement {
   // Returns today and month totals. Returns null if API not available.
   async _fetchStatsSingle(entityId, monthStart, now) {
     if (!this._hass.callApi) return null;
+    const startISO = monthStart.toISOString();
+    const endISO   = now.toISOString();
 
-    // Extend start back by 1 extra day to capture the last day of previous month
-    // (needed as the month-start baseline for delta calculation)
-    const extStart = new Date(monthStart.getTime() - 24 * 60 * 60 * 1000);
-
+    // statistics_during_period supports "period": "month", "day", "hour", "5minute"
+    // We use "day" to get one entry per day, then sum up from month start.
     const body = {
-      start_time:    extStart.toISOString(),
-      end_time:      now.toISOString(),
+      start_time: startISO,
+      end_time:   endISO,
       statistic_ids: [entityId],
-      period:        'day',
-      types:         ['sum'],
+      period: 'day',
+      types: ['sum'],
     };
 
     try {
-      const result  = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
+      const result = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
       const entries = result && result[entityId];
       if (!Array.isArray(entries) || entries.length === 0) return null;
 
-      // Index by date string
-      const byDay = {};
-      entries.forEach(e => { if (e.start) byDay[e.start.slice(0, 10)] = num(e.sum); });
+      // Each entry has { start, end, sum } where sum = cumulative total at end of period
+      // Last entry sum = current total; first entry start sum = value at month start
+      const lastEntry  = entries[entries.length - 1];
+      const firstEntry = entries[0];
 
-      // Month start baseline = last day of previous month
-      const lastDayPrev    = new Date(monthStart.getFullYear(), monthStart.getMonth(), 0);
-      const lastDayPrevStr = lastDayPrev.toISOString().slice(0, 10);
-      const monthStartSum  = byDay[lastDayPrevStr] !== undefined ? byDay[lastDayPrevStr] : null;
+      const totalAtEnd   = num(lastEntry.sum);
+      const totalAtStart = num(firstEntry.sum);   // value at start of first day of month
 
-      // Live value = current state
-      const liveObj = getStateObj(this._hass, entityId);
-      const liveVal = liveObj ? num(liveObj.state) : null;
+      if (totalAtEnd === null) return null;
 
-      const month = (monthStartSum !== null && liveVal !== null)
-        ? Math.max(0, liveVal - monthStartSum)
-        : null;
+      const month = totalAtStart !== null ? Math.max(0, totalAtEnd - totalAtStart) : null;
 
-      // Today: find yesterday's entry as start-of-today baseline
-      const todayStart    = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const yesterdayStr  = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const yesterdaySum  = byDay[yesterdayStr] !== undefined ? byDay[yesterdayStr] : null;
+      // Today: find today's entry
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayEntry = entries.find(e => e.start && e.start.startsWith(todayStr));
+      // For today: sum at end of today minus sum at start of today's entry
+      // The 'change' between consecutive days = today's usage
+      let today = null;
+      if (todayEntry) {
+        const todayIdx = entries.indexOf(todayEntry);
+        const prevEntry = todayIdx > 0 ? entries[todayIdx - 1] : null;
+        const todayEndVal   = num(todayEntry.sum);
+        const todayStartVal = prevEntry ? num(prevEntry.sum) : totalAtStart;
+        if (todayEndVal !== null && todayStartVal !== null) {
+          today = Math.max(0, todayEndVal - todayStartVal);
+        }
+      }
 
-      const today = (yesterdaySum !== null && liveVal !== null)
-        ? Math.max(0, liveVal - yesterdaySum)
-        : null;
-
-      console.info('[shd] stats single:', { month, today, monthStartSum, liveVal, entries: entries.length });
+      console.info('[shd] stats API success:', { month, today, entries: entries.length });
       return { month, today };
     } catch (e) {
-      console.warn('[shd] _fetchStatsSingle failed:', e);
+      console.warn('[shd] statistics_during_period failed:', e);
       return null;
     }
   }
@@ -3789,9 +3762,8 @@ class SmartHomeDashboardCard extends HTMLElement {
     const todayEl = this.shadowRoot.getElementById('shd-pmod-today');
     const monthEl = this.shadowRoot.getElementById('shd-pmod-month');
     if (todayEl) {
-      const todaySensor = cfg.today_energy_sensor && cfg.today_energy_sensor.trim();
-      if (todaySensor) {
-        const v = num(getState(this._hass, todaySensor));
+      if (cfg.today_energy_sensor) {
+        const v = num(getState(this._hass, cfg.today_energy_sensor));
         todayEl.textContent = v !== null ? v.toFixed(1) : '—';
       } else {
         todayEl.textContent = (this._energyData && this._energyData.today != null) ? this._energyData.today.toFixed(1) : '—';
@@ -3868,71 +3840,111 @@ class SmartHomeDashboardCard extends HTMLElement {
   async _fetchMonthlyHistory(entityId) {
     if (!this._hass || !this._hass.callApi) throw new Error('hass.callApi not available');
 
-    const now     = new Date();
-    const start12 = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    const now        = new Date();
+    const monthStart12 = new Date(now.getFullYear(), now.getMonth() - 11, 1); // 12 months ago
 
-    // Fetch daily statistics for the past 12 months.
-    // Each entry: { start: "2025-05-01T00:00:00+...", sum: <cumulative kWh at end of day> }
-    const body = {
-      start_time:    start12.toISOString(),
-      end_time:      now.toISOString(),
-      statistic_ids: [entityId],
-      period:        'day',
-      types:         ['sum'],
-    };
+    // Try the statistics API first — perfect for total_increasing energy sensors.
+    // period=month gives one entry per calendar month with sum (cumulative total at end of month).
+    try {
+      const body = {
+        start_time:    monthStart12.toISOString(),
+        end_time:      now.toISOString(),
+        statistic_ids: [entityId],
+        period:        'month',
+        types:         ['sum'],
+      };
+      const result  = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
+      const entries = result && result[entityId];
 
-    const result  = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
-    const entries = result && result[entityId];
+      if (Array.isArray(entries) && entries.length > 1) {
+        console.info('[shd] stats monthly entries for', entityId, ':', entries);
 
-    if (!Array.isArray(entries) || entries.length === 0) {
-      throw new Error('Statistics API returned no entries for ' + entityId);
+        const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const months = [];
+
+        for (let i = 0; i < entries.length - 1; i++) {
+          const curr = entries[i];
+          const next = entries[i + 1];
+          const sumCurr = num(curr.sum);
+          const sumNext = num(next.sum);
+          const delta   = (sumCurr !== null && sumNext !== null) ? Math.max(0, sumNext - sumCurr) : null;
+          const d       = new Date(curr.start);
+          months.push({
+            label:     monthNames[d.getMonth()] + ' \'' + String(d.getFullYear()).slice(2),
+            value:     delta,
+            isCurrent: false,
+          });
+        }
+
+        // Add current (partial) month: last entry sum minus second-to-last
+        const last     = entries[entries.length - 1];
+        const prev     = entries[entries.length - 2];
+        const curSum   = getStateObj(this._hass, entityId);
+        const curVal   = curSum ? num(curSum.state) : null;
+        const lastSum  = num(last.sum);
+        const prevSum  = num(prev.sum);
+
+        // Current month delta = current live value minus start-of-current-month sum
+        const curMonthDelta = (curVal !== null && lastSum !== null)
+          ? Math.max(0, curVal - lastSum)
+          : (lastSum !== null && prevSum !== null ? Math.max(0, lastSum - prevSum) : null);
+
+        const curMonthDate = new Date(last.start);
+        months.push({
+          label:     monthNames[curMonthDate.getMonth()] + ' \'' + String(curMonthDate.getFullYear()).slice(2),
+          value:     curMonthDelta,
+          isCurrent: true,
+        });
+
+        // Pad to 12 months if we got fewer (new HA installation)
+        while (months.length < 12) months.unshift({ label: '—', value: null, isCurrent: false });
+        return months.slice(-12);
+      }
+    } catch (e) {
+      console.warn('[shd] monthly stats failed, trying history API:', e);
     }
 
-    console.info('[shd] monthly chart: got', entries.length, 'daily entries for', entityId);
+    // Fallback: history/period with backward-looking lookups
+    const boundaries = [];
+    for (let i = 12; i >= 1; i--) boundaries.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+    boundaries.push(new Date(now.getFullYear(), now.getMonth(), 1));
 
-    // Index entries by "YYYY-MM-DD" for quick lookup
-    const byDay = {};
-    entries.forEach(e => {
-      if (e.start) byDay[e.start.slice(0, 10)] = num(e.sum);
-    });
+    const cur    = getStateObj(this._hass, entityId);
+    const curVal = cur ? num(cur.state) : null;
+    if (curVal === null) throw new Error(`No numeric state for ${entityId}`);
 
-    // For each of the 12 months, we need:
-    //   monthStart = sum of last day of PREVIOUS month (= baseline at start of this month)
-    //   monthEnd   = sum of last day of THIS month (or live value for current month)
-    // delta = monthEnd - monthStart
+    const fetchBefore = async (beforeDate) => {
+      try {
+        const startISO = new Date(beforeDate.getTime() - 48 * 60 * 60 * 1000).toISOString();
+        const endISO   = beforeDate.toISOString();
+        const url = `history/period/${startISO}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${endISO}&minimal_response&no_attributes`;
+        const result = await this._hass.callApi('GET', url);
+        if (Array.isArray(result) && result.length > 0 && result[0].length > 0) {
+          const last = result[0][result[0].length - 1];
+          return num(last.s !== undefined ? last.s : last.state);
+        }
+      } catch (e) { console.warn('[shd] history fetchBefore:', beforeDate.toISOString(), e); }
+      return null;
+    };
+
+    const boundaryVals = await Promise.all(boundaries.map(fetchBefore));
+    const allVals = [...boundaryVals, curVal];
+
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const months = [];
-    const liveSumObj = getStateObj(this._hass, entityId);
-    const liveSum    = liveSumObj ? num(liveSumObj.state) : null;
-
     for (let i = 0; i < 12; i++) {
-      // Month being computed
-      const d         = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
-      const isCurrent = (i === 11);
-
-      // Last day of previous month (= start-of-this-month baseline)
-      const lastDayPrev = new Date(d.getFullYear(), d.getMonth(), 0); // day 0 = last day of prev month
-      const lastDayPrevStr = lastDayPrev.toISOString().slice(0, 10);
-
-      // Last day of this month (or today for current month)
-      const lastDayThis    = isCurrent ? now : new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      const lastDayThisStr = lastDayThis.toISOString().slice(0, 10);
-
-      const startVal = byDay[lastDayPrevStr] !== undefined ? byDay[lastDayPrevStr] : null;
-      const endVal   = isCurrent ? liveSum : (byDay[lastDayThisStr] !== undefined ? byDay[lastDayThisStr] : null);
-
-      const delta = (startVal !== null && endVal !== null)
-        ? Math.max(0, endVal - startVal)
-        : null;
-
+      const a     = allVals[i];
+      const b     = allVals[i + 1];
+      const d     = boundaries[i];
+      const delta = (a !== null && b !== null) ? Math.max(0, b - a) : null;
       months.push({
         label:     monthNames[d.getMonth()] + ' \'' + String(d.getFullYear()).slice(2),
         value:     delta,
-        isCurrent,
+        isCurrent: i === 11,
       });
     }
 
-    console.info('[shd] monthly chart result:', months.map(m => m.label + ':' + m.value));
+    console.info('[shd] history monthly for', entityId, ':', months);
     return months;
   }
 
@@ -4736,7 +4748,7 @@ class SmartHomeDashboardCardEditor extends LitElement {
   /* — Power — */
   _renderPower() {
     const p = this._config.power || {};
-    const cumVal = p.energy_sensor && this.hass ? num((this.hass.states[p.energy_sensor] ? this.hass.states[p.energy_sensor].state : undefined)) : null;
+    const cumVal = p.energy_sensor && this.hass ? num(this.hass.states[p.energy_sensor]?.state) : null;
     const cumHint = cumVal !== null ? ` — current: ${cumVal.toFixed(1)} kWh` : '';
 
     return this._sectionShell('power', '⚡ Main Power', null, html`
