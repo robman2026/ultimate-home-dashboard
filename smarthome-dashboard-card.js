@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.3.6';
+const CARD_VERSION = '0.3.7';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -650,6 +650,9 @@ function getStubConfig() {
     },
     salt: {
       sensor: '',
+      name: 'Salt Level',
+      full_at_cm: null,
+      empty_at_cm: null,
     },
     mower: {
       entity: '',
@@ -885,6 +888,12 @@ const CARD_STYLES = `
     font-size: 58px; font-weight: 200; line-height: 1;
     color: #fff; letter-spacing: -3px;
     font-family: var(--shd-mono);
+  }
+  .shd-clock-sec {
+    font-size: 32px; font-weight: 200;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: -1px;
+    vertical-align: middle;
   }
   .shd-clock-date {
     font-size: 12px; color: var(--shd-text-secondary);
@@ -2041,6 +2050,54 @@ class SmartHomeDashboardCard extends HTMLElement {
           </div>
         </div>
       </div>
+
+      <!-- Salt modal -->
+      <div class="shd-modal-overlay" id="shd-salt-modal" data-shd-modal="salt">
+        <div class="shd-modal">
+          <button class="shd-modal-close" data-shd-close="salt">✕</button>
+          <div class="shd-modal-header">
+            <div class="shd-modal-icon">🧂</div>
+            <div>
+              <div class="shd-modal-subtitle" id="shd-smod-sensor">—</div>
+              <div class="shd-modal-title" id="shd-smod-title">Salt Level</div>
+            </div>
+          </div>
+
+          <!-- Big percentage gauge -->
+          <div style="display:flex;align-items:center;gap:20px;background:rgba(255,255,255,0.04);border-radius:14px;padding:16px;margin-bottom:12px;">
+            <div id="shd-smod-circle-wrap">
+              <!-- SVG gauge injected by _openSaltModal -->
+            </div>
+            <div style="flex:1;">
+              <div id="shd-smod-pct-label" style="font-size:42px;font-weight:200;color:#fff;font-family:var(--shd-mono);line-height:1;">—%</div>
+              <div id="shd-smod-status" style="font-size:13px;color:rgba(255,255,255,0.6);margin-top:4px;">—</div>
+              <div id="shd-smod-refill" style="font-size:11px;color:var(--shd-text-muted);margin-top:6px;">—</div>
+            </div>
+          </div>
+
+          <!-- Metrics grid -->
+          <div class="shd-pmod-stats" id="shd-smod-metrics" style="margin-bottom:12px;">
+            <div class="shd-pmod-stat">
+              <div class="shd-pmod-stat-lbl">Raw value</div>
+              <div class="shd-pmod-stat-val" id="shd-smod-raw">—</div>
+              <div class="shd-pmod-stat-unit" id="shd-smod-raw-unit">%</div>
+            </div>
+            <div class="shd-pmod-stat">
+              <div class="shd-pmod-stat-lbl">Full at</div>
+              <div class="shd-pmod-stat-val" id="shd-smod-full">—</div>
+              <div class="shd-pmod-stat-unit">cm</div>
+            </div>
+            <div class="shd-pmod-stat">
+              <div class="shd-pmod-stat-lbl">Empty at</div>
+              <div class="shd-pmod-stat-val" id="shd-smod-empty">—</div>
+              <div class="shd-pmod-stat-unit">cm</div>
+            </div>
+          </div>
+
+          <!-- Calibration note -->
+          <div id="shd-smod-note" style="font-size:11px;color:var(--shd-text-muted);text-align:center;line-height:1.5;padding:10px;background:rgba(167,139,250,0.06);border-radius:10px;"></div>
+        </div>
+      </div>
     `;
   }
 
@@ -2342,13 +2399,15 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _renderSaltCard() {
-    const sensor = this._config.salt && this._config.salt.sensor;
+    const cfg = this._config.salt || {};
+    const sensor = cfg.sensor;
+    const name = cfg.name || 'Salt Level';
     if (!sensor) {
       return `
         <div class="shd-card">
           <div class="shd-section-label">
             <div class="shd-section-dot" style="background:var(--shd-accent-purple);"></div>
-            Salt Level
+            ${this._esc(name)}
           </div>
           <div class="shd-widget-empty">
             Configure <code>salt.sensor</code> in the editor.
@@ -2357,17 +2416,17 @@ class SmartHomeDashboardCard extends HTMLElement {
       `;
     }
     return `
-      <div class="shd-card">
+      <div class="shd-card" id="shd-salt-card" style="cursor:pointer;" data-action="salt-modal">
         <div class="shd-section-label">
           <div class="shd-section-dot" style="background:var(--shd-accent-purple);"></div>
-          Salt Level
-          <span style="margin-left:auto;font-size:9px;font-weight:400;background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:5px;color:var(--shd-text-muted);text-transform:none;letter-spacing:0;font-family:var(--shd-mono);">${this._esc(sensor)}</span>
+          ${this._esc(name)}
+          <span style="margin-left:auto;font-size:9px;color:var(--shd-text-muted);">tap for details →</span>
         </div>
         <div class="shd-salt-row">
           <div class="shd-salt-circle" id="shd-salt-circle">—</div>
           <div>
             <div class="shd-salt-info-main" id="shd-salt-main">—</div>
-            <div class="shd-salt-info-sub" id="shd-salt-sub">ultrasonic sensor</div>
+            <div class="shd-salt-info-sub" id="shd-salt-sub">${this._esc(sensor)}</div>
           </div>
         </div>
       </div>
@@ -2544,6 +2603,10 @@ class SmartHomeDashboardCard extends HTMLElement {
     // Garage row click → open garage modal
     const gateRow = root.getElementById('shd-gate-row');
     if (gateRow) gateRow.addEventListener('click', () => this._openGateModal());
+
+    // Salt card click → open salt modal
+    const saltCard = root.getElementById('shd-salt-card');
+    if (saltCard) saltCard.addEventListener('click', () => this._openSaltModal());
 
     // Power click → open power modal
     const powerCard = root.getElementById('shd-power-card');
@@ -3032,20 +3095,23 @@ class SmartHomeDashboardCard extends HTMLElement {
     const now = new Date();
     const hh = String(now.getHours()).padStart(2, '0');
     const mm = String(now.getMinutes()).padStart(2, '0');
-    const hhmm = `${hh}:${mm}`;
+    const ss = String(now.getSeconds()).padStart(2, '0');
 
-    // Topbar time (top-right)
+    // Topbar time (top-right) — no seconds, keeps it compact
     const timeEl = this.shadowRoot.querySelector('.shd-topbar-time');
-    if (timeEl) timeEl.textContent = hhmm;
+    if (timeEl) timeEl.textContent = `${hh}:${mm}`;
 
-    // Big clock card (left column)
+    // Big clock card (left column) — includes seconds
     const bigTime = this.shadowRoot.getElementById('shd-clock-time');
-    if (bigTime) bigTime.textContent = hhmm;
+    if (bigTime) {
+      // Render HH:MM in large font, :SS smaller alongside
+      bigTime.innerHTML = `${hh}:${mm}<span class="shd-clock-sec">:${ss}</span>`;
+    }
 
-    // Date line under the big clock
+    // Date line
     const dateEl = this.shadowRoot.getElementById('shd-clock-date');
     if (dateEl) {
-      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const days   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
       const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       dateEl.textContent = days[now.getDay()] + ', ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
     }
@@ -3696,10 +3762,95 @@ class SmartHomeDashboardCard extends HTMLElement {
   _closeModal(id) {
     const m = this.shadowRoot.getElementById('shd-' + id + '-modal');
     if (m) m.classList.remove('shd-show');
-    // Stop the gate animation when closing the gate modal so it doesn't keep running.
     if (id === 'gate' && this._gateAnimFrame) {
       cancelAnimationFrame(this._gateAnimFrame);
       this._gateAnimFrame = null;
+    }
+  }
+
+  _openSaltModal() {
+    const m = this.shadowRoot.getElementById('shd-salt-modal');
+    if (!m) return;
+    m.classList.add('shd-show');
+
+    const cfg = this._config.salt || {};
+    const name = cfg.name || 'Salt Level';
+    const sensor = cfg.sensor || '';
+    const pct = calcSaltPct(this._hass, cfg);
+    const o = sensor ? getStateObj(this._hass, sensor) : null;
+    const rawVal = o ? num(o.state) : null;
+    const rawUnit = (o && o.attributes && o.attributes.unit_of_measurement) || '';
+
+    // Title + sensor
+    const titleEl = this.shadowRoot.getElementById('shd-smod-title');
+    if (titleEl) titleEl.textContent = name;
+    const sensEl = this.shadowRoot.getElementById('shd-smod-sensor');
+    if (sensEl) sensEl.textContent = sensor;
+
+    // Big percentage
+    const pctLabel = this.shadowRoot.getElementById('shd-smod-pct-label');
+    if (pctLabel) pctLabel.textContent = pct !== null ? Math.round(pct) + '%' : '—';
+    pctLabel.style.color = pct !== null && pct < 20 ? '#ef4444' : pct !== null && pct < 40 ? '#f59e0b' : '#fff';
+
+    // Status text
+    const statusEl = this.shadowRoot.getElementById('shd-smod-status');
+    if (statusEl) {
+      if (pct === null) statusEl.textContent = 'Sensor unavailable';
+      else if (pct < 15) statusEl.textContent = '⚠️ Refill needed now';
+      else if (pct < 35) statusEl.textContent = 'Refill in ~2 weeks';
+      else if (pct < 60) statusEl.textContent = 'Refill in ~1 month';
+      else statusEl.textContent = 'Levels look good';
+    }
+
+    // Refill hint
+    const refillEl = this.shadowRoot.getElementById('shd-smod-refill');
+    if (refillEl) refillEl.textContent = sensor ? 'Entity: ' + sensor : '';
+
+    // SVG arc gauge
+    const circleWrap = this.shadowRoot.getElementById('shd-smod-circle-wrap');
+    if (circleWrap) {
+      const p = pct != null ? Math.max(0, Math.min(100, pct)) : 0;
+      const r = 54, cx = 64, cy = 64;
+      const circ = 2 * Math.PI * r;
+      const filled = (p / 100) * circ;
+      const color = p < 15 ? '#ef4444' : p < 35 ? '#f59e0b' : '#a78bfa';
+      circleWrap.innerHTML = `
+        <svg width="128" height="128" viewBox="0 0 128 128">
+          <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="10"/>
+          <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="10"
+            stroke-linecap="round"
+            stroke-dasharray="${filled.toFixed(1)} ${(circ - filled).toFixed(1)}"
+            transform="rotate(-90 ${cx} ${cy})"
+            style="transition:stroke-dasharray 0.6s ease;"/>
+          <text x="${cx}" y="${cy + 7}" text-anchor="middle" font-size="22" font-weight="300" fill="#fff" font-family="JetBrains Mono,monospace">${p > 0 ? Math.round(p) : '—'}</text>
+          <text x="${cx}" y="${cy + 22}" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.4)" font-family="Outfit,sans-serif">%</text>
+        </svg>`;
+    }
+
+    // Metrics
+    const rawEl = this.shadowRoot.getElementById('shd-smod-raw');
+    const rawUnitEl = this.shadowRoot.getElementById('shd-smod-raw-unit');
+    if (rawEl) rawEl.textContent = rawVal !== null ? rawVal : '—';
+    if (rawUnitEl) rawUnitEl.textContent = rawUnit || '%';
+
+    const fullAt = cfg.full_at_cm;
+    const emptyAt = cfg.empty_at_cm;
+    const fullEl  = this.shadowRoot.getElementById('shd-smod-full');
+    const emptyEl = this.shadowRoot.getElementById('shd-smod-empty');
+    if (fullEl)  fullEl.textContent  = fullAt  != null ? fullAt  : rawUnit === 'm' || rawUnit === 'cm' ? '10' : '—';
+    if (emptyEl) emptyEl.textContent = emptyAt != null ? emptyAt : rawUnit === 'm' || rawUnit === 'cm' ? '60' : '—';
+
+    // Note
+    const noteEl = this.shadowRoot.getElementById('shd-smod-note');
+    if (noteEl) {
+      if (rawUnit === '%') {
+        noteEl.textContent = 'Sensor reports % directly. No distance calibration needed.';
+      } else if (rawUnit === 'm' || rawUnit === 'cm') {
+        noteEl.textContent = 'Distance sensor: ' + (rawVal != null ? rawVal + ' ' + rawUnit : '—') +
+          '. Mapped to % using calibration: ' + (fullAt || 10) + ' cm = full, ' + (emptyAt || 60) + ' cm = empty. Adjust in Editor → Salt Level.';
+      } else {
+        noteEl.textContent = 'Configure sensor in Editor → Salt Level.';
+      }
     }
   }
 
@@ -4200,6 +4351,12 @@ class SmartHomeDashboardCardEditor extends LitElement {
   _renderSalt() {
     const s = this._config.salt || {};
     return this._sectionShell('salt', '🧂 Salt Level', null, html`
+      ${this._textField({
+        label: 'Display name',
+        value: s.name || '',
+        placeholder: 'Salt Level',
+        onChange: (v) => this._setDeep(['salt', 'name'], v),
+      })}
       ${this._entityPicker({
         label: 'Salt sensor (ultrasonic % or distance)',
         value: s.sensor,
