@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.4.2';
+const CARD_VERSION = '0.4.3';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -3033,10 +3033,10 @@ class SmartHomeDashboardCard extends HTMLElement {
     }
 
     // Today — use today_energy_sensor directly if configured (daily-reset entity)
-    const todayEl = this.shadowRoot.getElementById('shd-power-today');
+    const todaySensor = cfg.today_energy_sensor && cfg.today_energy_sensor.trim();
     if (todayEl) {
-      if (cfg.today_energy_sensor) {
-        const todayVal = num(getState(this._hass, cfg.today_energy_sensor));
+      if (todaySensor) {
+        const todayVal = num(getState(this._hass, todaySensor));
         todayEl.textContent = todayVal !== null ? todayVal.toFixed(1) + ' kWh' : '—';
       } else {
         todayEl.textContent = (this._energyData && this._energyData.today != null)
@@ -3117,56 +3117,54 @@ class SmartHomeDashboardCard extends HTMLElement {
   // Returns today and month totals. Returns null if API not available.
   async _fetchStatsSingle(entityId, monthStart, now) {
     if (!this._hass.callApi) return null;
-    const startISO = monthStart.toISOString();
-    const endISO   = now.toISOString();
 
-    // statistics_during_period supports "period": "month", "day", "hour", "5minute"
-    // We use "day" to get one entry per day, then sum up from month start.
+    // Extend start back by 1 extra day to capture the last day of previous month
+    // (needed as the month-start baseline for delta calculation)
+    const extStart = new Date(monthStart.getTime() - 24 * 60 * 60 * 1000);
+
     const body = {
-      start_time: startISO,
-      end_time:   endISO,
+      start_time:    extStart.toISOString(),
+      end_time:      now.toISOString(),
       statistic_ids: [entityId],
-      period: 'day',
-      types: ['sum'],
+      period:        'day',
+      types:         ['sum'],
     };
 
     try {
-      const result = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
+      const result  = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
       const entries = result && result[entityId];
       if (!Array.isArray(entries) || entries.length === 0) return null;
 
-      // Each entry has { start, end, sum } where sum = cumulative total at end of period
-      // Last entry sum = current total; first entry start sum = value at month start
-      const lastEntry  = entries[entries.length - 1];
-      const firstEntry = entries[0];
+      // Index by date string
+      const byDay = {};
+      entries.forEach(e => { if (e.start) byDay[e.start.slice(0, 10)] = num(e.sum); });
 
-      const totalAtEnd   = num(lastEntry.sum);
-      const totalAtStart = num(firstEntry.sum);   // value at start of first day of month
+      // Month start baseline = last day of previous month
+      const lastDayPrev    = new Date(monthStart.getFullYear(), monthStart.getMonth(), 0);
+      const lastDayPrevStr = lastDayPrev.toISOString().slice(0, 10);
+      const monthStartSum  = byDay[lastDayPrevStr] ?? null;
 
-      if (totalAtEnd === null) return null;
+      // Live value = current state
+      const liveObj = getStateObj(this._hass, entityId);
+      const liveVal = liveObj ? num(liveObj.state) : null;
 
-      const month = totalAtStart !== null ? Math.max(0, totalAtEnd - totalAtStart) : null;
+      const month = (monthStartSum !== null && liveVal !== null)
+        ? Math.max(0, liveVal - monthStartSum)
+        : null;
 
-      // Today: find today's entry
-      const todayStr = new Date().toISOString().slice(0, 10);
-      const todayEntry = entries.find(e => e.start && e.start.startsWith(todayStr));
-      // For today: sum at end of today minus sum at start of today's entry
-      // The 'change' between consecutive days = today's usage
-      let today = null;
-      if (todayEntry) {
-        const todayIdx = entries.indexOf(todayEntry);
-        const prevEntry = todayIdx > 0 ? entries[todayIdx - 1] : null;
-        const todayEndVal   = num(todayEntry.sum);
-        const todayStartVal = prevEntry ? num(prevEntry.sum) : totalAtStart;
-        if (todayEndVal !== null && todayStartVal !== null) {
-          today = Math.max(0, todayEndVal - todayStartVal);
-        }
-      }
+      // Today: find yesterday's entry as start-of-today baseline
+      const todayStart    = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterdayStr  = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const yesterdaySum  = byDay[yesterdayStr] ?? null;
 
-      console.info('[shd] stats API success:', { month, today, entries: entries.length });
+      const today = (yesterdaySum !== null && liveVal !== null)
+        ? Math.max(0, liveVal - yesterdaySum)
+        : null;
+
+      console.info('[shd] stats single:', { month, today, monthStartSum, liveVal, entries: entries.length });
       return { month, today };
     } catch (e) {
-      console.warn('[shd] statistics_during_period failed:', e);
+      console.warn('[shd] _fetchStatsSingle failed:', e);
       return null;
     }
   }
@@ -3762,8 +3760,9 @@ class SmartHomeDashboardCard extends HTMLElement {
     const todayEl = this.shadowRoot.getElementById('shd-pmod-today');
     const monthEl = this.shadowRoot.getElementById('shd-pmod-month');
     if (todayEl) {
-      if (cfg.today_energy_sensor) {
-        const v = num(getState(this._hass, cfg.today_energy_sensor));
+      const todaySensor = cfg.today_energy_sensor && cfg.today_energy_sensor.trim();
+      if (todaySensor) {
+        const v = num(getState(this._hass, todaySensor));
         todayEl.textContent = v !== null ? v.toFixed(1) : '—';
       } else {
         todayEl.textContent = (this._energyData && this._energyData.today != null) ? this._energyData.today.toFixed(1) : '—';
@@ -3840,111 +3839,71 @@ class SmartHomeDashboardCard extends HTMLElement {
   async _fetchMonthlyHistory(entityId) {
     if (!this._hass || !this._hass.callApi) throw new Error('hass.callApi not available');
 
-    const now        = new Date();
-    const monthStart12 = new Date(now.getFullYear(), now.getMonth() - 11, 1); // 12 months ago
+    const now     = new Date();
+    const start12 = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
-    // Try the statistics API first — perfect for total_increasing energy sensors.
-    // period=month gives one entry per calendar month with sum (cumulative total at end of month).
-    try {
-      const body = {
-        start_time:    monthStart12.toISOString(),
-        end_time:      now.toISOString(),
-        statistic_ids: [entityId],
-        period:        'month',
-        types:         ['sum'],
-      };
-      const result  = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
-      const entries = result && result[entityId];
-
-      if (Array.isArray(entries) && entries.length > 1) {
-        console.info('[shd] stats monthly entries for', entityId, ':', entries);
-
-        const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        const months = [];
-
-        for (let i = 0; i < entries.length - 1; i++) {
-          const curr = entries[i];
-          const next = entries[i + 1];
-          const sumCurr = num(curr.sum);
-          const sumNext = num(next.sum);
-          const delta   = (sumCurr !== null && sumNext !== null) ? Math.max(0, sumNext - sumCurr) : null;
-          const d       = new Date(curr.start);
-          months.push({
-            label:     monthNames[d.getMonth()] + ' \'' + String(d.getFullYear()).slice(2),
-            value:     delta,
-            isCurrent: false,
-          });
-        }
-
-        // Add current (partial) month: last entry sum minus second-to-last
-        const last     = entries[entries.length - 1];
-        const prev     = entries[entries.length - 2];
-        const curSum   = getStateObj(this._hass, entityId);
-        const curVal   = curSum ? num(curSum.state) : null;
-        const lastSum  = num(last.sum);
-        const prevSum  = num(prev.sum);
-
-        // Current month delta = current live value minus start-of-current-month sum
-        const curMonthDelta = (curVal !== null && lastSum !== null)
-          ? Math.max(0, curVal - lastSum)
-          : (lastSum !== null && prevSum !== null ? Math.max(0, lastSum - prevSum) : null);
-
-        const curMonthDate = new Date(last.start);
-        months.push({
-          label:     monthNames[curMonthDate.getMonth()] + ' \'' + String(curMonthDate.getFullYear()).slice(2),
-          value:     curMonthDelta,
-          isCurrent: true,
-        });
-
-        // Pad to 12 months if we got fewer (new HA installation)
-        while (months.length < 12) months.unshift({ label: '—', value: null, isCurrent: false });
-        return months.slice(-12);
-      }
-    } catch (e) {
-      console.warn('[shd] monthly stats failed, trying history API:', e);
-    }
-
-    // Fallback: history/period with backward-looking lookups
-    const boundaries = [];
-    for (let i = 12; i >= 1; i--) boundaries.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
-    boundaries.push(new Date(now.getFullYear(), now.getMonth(), 1));
-
-    const cur    = getStateObj(this._hass, entityId);
-    const curVal = cur ? num(cur.state) : null;
-    if (curVal === null) throw new Error(`No numeric state for ${entityId}`);
-
-    const fetchBefore = async (beforeDate) => {
-      try {
-        const startISO = new Date(beforeDate.getTime() - 48 * 60 * 60 * 1000).toISOString();
-        const endISO   = beforeDate.toISOString();
-        const url = `history/period/${startISO}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${endISO}&minimal_response&no_attributes`;
-        const result = await this._hass.callApi('GET', url);
-        if (Array.isArray(result) && result.length > 0 && result[0].length > 0) {
-          const last = result[0][result[0].length - 1];
-          return num(last.s !== undefined ? last.s : last.state);
-        }
-      } catch (e) { console.warn('[shd] history fetchBefore:', beforeDate.toISOString(), e); }
-      return null;
+    // Fetch daily statistics for the past 12 months.
+    // Each entry: { start: "2025-05-01T00:00:00+...", sum: <cumulative kWh at end of day> }
+    const body = {
+      start_time:    start12.toISOString(),
+      end_time:      now.toISOString(),
+      statistic_ids: [entityId],
+      period:        'day',
+      types:         ['sum'],
     };
 
-    const boundaryVals = await Promise.all(boundaries.map(fetchBefore));
-    const allVals = [...boundaryVals, curVal];
+    const result  = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
+    const entries = result && result[entityId];
 
+    if (!Array.isArray(entries) || entries.length === 0) {
+      throw new Error('Statistics API returned no entries for ' + entityId);
+    }
+
+    console.info('[shd] monthly chart: got', entries.length, 'daily entries for', entityId);
+
+    // Index entries by "YYYY-MM-DD" for quick lookup
+    const byDay = {};
+    entries.forEach(e => {
+      if (e.start) byDay[e.start.slice(0, 10)] = num(e.sum);
+    });
+
+    // For each of the 12 months, we need:
+    //   monthStart = sum of last day of PREVIOUS month (= baseline at start of this month)
+    //   monthEnd   = sum of last day of THIS month (or live value for current month)
+    // delta = monthEnd - monthStart
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const months = [];
+    const liveSumObj = getStateObj(this._hass, entityId);
+    const liveSum    = liveSumObj ? num(liveSumObj.state) : null;
+
     for (let i = 0; i < 12; i++) {
-      const a     = allVals[i];
-      const b     = allVals[i + 1];
-      const d     = boundaries[i];
-      const delta = (a !== null && b !== null) ? Math.max(0, b - a) : null;
+      // Month being computed
+      const d         = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+      const isCurrent = (i === 11);
+
+      // Last day of previous month (= start-of-this-month baseline)
+      const lastDayPrev = new Date(d.getFullYear(), d.getMonth(), 0); // day 0 = last day of prev month
+      const lastDayPrevStr = lastDayPrev.toISOString().slice(0, 10);
+
+      // Last day of this month (or today for current month)
+      const lastDayThis    = isCurrent ? now : new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const lastDayThisStr = lastDayThis.toISOString().slice(0, 10);
+
+      const startVal = byDay[lastDayPrevStr] ?? null;
+      const endVal   = isCurrent ? liveSum : (byDay[lastDayThisStr] ?? null);
+
+      const delta = (startVal !== null && endVal !== null)
+        ? Math.max(0, endVal - startVal)
+        : null;
+
       months.push({
         label:     monthNames[d.getMonth()] + ' \'' + String(d.getFullYear()).slice(2),
         value:     delta,
-        isCurrent: i === 11,
+        isCurrent,
       });
     }
 
-    console.info('[shd] history monthly for', entityId, ':', months);
+    console.info('[shd] monthly chart result:', months.map(m => m.label + ':' + m.value));
     return months;
   }
 
