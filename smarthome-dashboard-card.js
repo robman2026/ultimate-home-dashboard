@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.4.1';
+const CARD_VERSION = '0.4.2';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -3068,30 +3068,37 @@ class SmartHomeDashboardCard extends HTMLElement {
   async _fetchEnergyTotals(entityId) {
     if (!this._hass || !this._hass.callApi) return null;
 
-    // Get the current value directly from state (no API needed)
     const cur = getStateObj(this._hass, entityId);
     const curVal = cur ? num(cur.state) : null;
     if (curVal === null) return { today: null, month: null };
 
-    const now       = new Date();
+    const now        = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // Fetch the last known value BEFORE a given timestamp (look backward up to 24h).
+    // Try statistics API first (most reliable for total_increasing energy sensors)
+    try {
+      const stats = await this._fetchStatsSingle(entityId, monthStart, now);
+      if (stats) {
+        return {
+          today: stats.today,
+          month: stats.month,
+        };
+      }
+    } catch (e) { console.warn('[shd] stats fetch failed, trying history API:', e); }
+
+    // Fallback: history API
     const fetchBefore = async (beforeDate) => {
       try {
-        // end_time = boundary, look back up to 24h for the last recorded state
-        const startISO = new Date(beforeDate.getTime() - 24 * 60 * 60 * 1000).toISOString();
+        const startISO = new Date(beforeDate.getTime() - 48 * 60 * 60 * 1000).toISOString();
         const endISO   = beforeDate.toISOString();
-        const url = `history/period/${startISO}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${encodeURIComponent(endISO)}&minimal_response&no_attributes`;
+        const url = `history/period/${startISO}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${endISO}&minimal_response&no_attributes`;
         const result = await this._hass.callApi('GET', url);
         if (Array.isArray(result) && result.length > 0 && result[0].length > 0) {
-          // Take the LAST entry in the window (closest to the boundary)
           const last = result[0][result[0].length - 1];
-          const v = num(last.s !== undefined ? last.s : last.state);
-          return v;
+          return num(last.s !== undefined ? last.s : last.state);
         }
-      } catch (e) { console.warn('[shd] fetchBefore failed:', e); }
+      } catch (e) { console.warn('[shd] history fetchBefore failed:', e); }
       return null;
     };
 
@@ -3104,6 +3111,64 @@ class SmartHomeDashboardCard extends HTMLElement {
       today: (todayStartVal !== null) ? Math.max(0, curVal - todayStartVal) : null,
       month: (monthStartVal !== null) ? Math.max(0, curVal - monthStartVal) : null,
     };
+  }
+
+  // Use recorder/statistics_during_period — designed for total_increasing sensors.
+  // Returns today and month totals. Returns null if API not available.
+  async _fetchStatsSingle(entityId, monthStart, now) {
+    if (!this._hass.callApi) return null;
+    const startISO = monthStart.toISOString();
+    const endISO   = now.toISOString();
+
+    // statistics_during_period supports "period": "month", "day", "hour", "5minute"
+    // We use "day" to get one entry per day, then sum up from month start.
+    const body = {
+      start_time: startISO,
+      end_time:   endISO,
+      statistic_ids: [entityId],
+      period: 'day',
+      types: ['sum'],
+    };
+
+    try {
+      const result = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
+      const entries = result && result[entityId];
+      if (!Array.isArray(entries) || entries.length === 0) return null;
+
+      // Each entry has { start, end, sum } where sum = cumulative total at end of period
+      // Last entry sum = current total; first entry start sum = value at month start
+      const lastEntry  = entries[entries.length - 1];
+      const firstEntry = entries[0];
+
+      const totalAtEnd   = num(lastEntry.sum);
+      const totalAtStart = num(firstEntry.sum);   // value at start of first day of month
+
+      if (totalAtEnd === null) return null;
+
+      const month = totalAtStart !== null ? Math.max(0, totalAtEnd - totalAtStart) : null;
+
+      // Today: find today's entry
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayEntry = entries.find(e => e.start && e.start.startsWith(todayStr));
+      // For today: sum at end of today minus sum at start of today's entry
+      // The 'change' between consecutive days = today's usage
+      let today = null;
+      if (todayEntry) {
+        const todayIdx = entries.indexOf(todayEntry);
+        const prevEntry = todayIdx > 0 ? entries[todayIdx - 1] : null;
+        const todayEndVal   = num(todayEntry.sum);
+        const todayStartVal = prevEntry ? num(prevEntry.sum) : totalAtStart;
+        if (todayEndVal !== null && todayStartVal !== null) {
+          today = Math.max(0, todayEndVal - todayStartVal);
+        }
+      }
+
+      console.info('[shd] stats API success:', { month, today, entries: entries.length });
+      return { month, today };
+    } catch (e) {
+      console.warn('[shd] statistics_during_period failed:', e);
+      return null;
+    }
   }
 
   _startResizeObserver() {
@@ -3775,61 +3840,111 @@ class SmartHomeDashboardCard extends HTMLElement {
   async _fetchMonthlyHistory(entityId) {
     if (!this._hass || !this._hass.callApi) throw new Error('hass.callApi not available');
 
-    const now = new Date();
+    const now        = new Date();
+    const monthStart12 = new Date(now.getFullYear(), now.getMonth() - 11, 1); // 12 months ago
 
-    // Get current live value directly from state
-    const cur = getStateObj(this._hass, entityId);
-    const curVal = cur ? num(cur.state) : null;
-    if (curVal === null) throw new Error(`Entity ${entityId} has no numeric state`);
+    // Try the statistics API first — perfect for total_increasing energy sensors.
+    // period=month gives one entry per calendar month with sum (cumulative total at end of month).
+    try {
+      const body = {
+        start_time:    monthStart12.toISOString(),
+        end_time:      now.toISOString(),
+        statistic_ids: [entityId],
+        period:        'month',
+        types:         ['sum'],
+      };
+      const result  = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
+      const entries = result && result[entityId];
 
-    // Build 12 month-start boundaries (oldest first) plus "now" as the final value
-    const boundaries = [];
-    for (let i = 12; i >= 1; i--) {
-      boundaries.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+      if (Array.isArray(entries) && entries.length > 1) {
+        console.info('[shd] stats monthly entries for', entityId, ':', entries);
+
+        const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const months = [];
+
+        for (let i = 0; i < entries.length - 1; i++) {
+          const curr = entries[i];
+          const next = entries[i + 1];
+          const sumCurr = num(curr.sum);
+          const sumNext = num(next.sum);
+          const delta   = (sumCurr !== null && sumNext !== null) ? Math.max(0, sumNext - sumCurr) : null;
+          const d       = new Date(curr.start);
+          months.push({
+            label:     monthNames[d.getMonth()] + ' \'' + String(d.getFullYear()).slice(2),
+            value:     delta,
+            isCurrent: false,
+          });
+        }
+
+        // Add current (partial) month: last entry sum minus second-to-last
+        const last     = entries[entries.length - 1];
+        const prev     = entries[entries.length - 2];
+        const curSum   = getStateObj(this._hass, entityId);
+        const curVal   = curSum ? num(curSum.state) : null;
+        const lastSum  = num(last.sum);
+        const prevSum  = num(prev.sum);
+
+        // Current month delta = current live value minus start-of-current-month sum
+        const curMonthDelta = (curVal !== null && lastSum !== null)
+          ? Math.max(0, curVal - lastSum)
+          : (lastSum !== null && prevSum !== null ? Math.max(0, lastSum - prevSum) : null);
+
+        const curMonthDate = new Date(last.start);
+        months.push({
+          label:     monthNames[curMonthDate.getMonth()] + ' \'' + String(curMonthDate.getFullYear()).slice(2),
+          value:     curMonthDelta,
+          isCurrent: true,
+        });
+
+        // Pad to 12 months if we got fewer (new HA installation)
+        while (months.length < 12) months.unshift({ label: '—', value: null, isCurrent: false });
+        return months.slice(-12);
+      }
+    } catch (e) {
+      console.warn('[shd] monthly stats failed, trying history API:', e);
     }
-    // Current month start
-    boundaries.push(new Date(now.getFullYear(), now.getMonth(), 1));
-    // Current value (no fetch needed — use curVal)
 
-    // Fetch the last recorded state BEFORE each boundary (look back up to 48h)
+    // Fallback: history/period with backward-looking lookups
+    const boundaries = [];
+    for (let i = 12; i >= 1; i--) boundaries.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+    boundaries.push(new Date(now.getFullYear(), now.getMonth(), 1));
+
+    const cur    = getStateObj(this._hass, entityId);
+    const curVal = cur ? num(cur.state) : null;
+    if (curVal === null) throw new Error(`No numeric state for ${entityId}`);
+
     const fetchBefore = async (beforeDate) => {
       try {
         const startISO = new Date(beforeDate.getTime() - 48 * 60 * 60 * 1000).toISOString();
         const endISO   = beforeDate.toISOString();
-        const url = `history/period/${startISO}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${encodeURIComponent(endISO)}&minimal_response&no_attributes`;
+        const url = `history/period/${startISO}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${endISO}&minimal_response&no_attributes`;
         const result = await this._hass.callApi('GET', url);
         if (Array.isArray(result) && result.length > 0 && result[0].length > 0) {
           const last = result[0][result[0].length - 1];
           return num(last.s !== undefined ? last.s : last.state);
         }
-      } catch (e) {
-        console.warn('[shd] monthly history fetch failed for', beforeDate.toISOString(), e);
-      }
+      } catch (e) { console.warn('[shd] history fetchBefore:', beforeDate.toISOString(), e); }
       return null;
     };
 
-    // Fetch all boundaries in parallel
     const boundaryVals = await Promise.all(boundaries.map(fetchBefore));
-
-    // Append current value as the final "after last month start" reading
     const allVals = [...boundaryVals, curVal];
 
-    // Compute deltas: months[i] = allVals[i+1] - allVals[i]
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const months = [];
     for (let i = 0; i < 12; i++) {
-      const a = allVals[i];      // start-of-month value
-      const b = allVals[i + 1];  // start-of-next-month value (or current)
-      const d = boundaries[i];
+      const a     = allVals[i];
+      const b     = allVals[i + 1];
+      const d     = boundaries[i];
       const delta = (a !== null && b !== null) ? Math.max(0, b - a) : null;
       months.push({
-        label: monthNames[d.getMonth()] + ' \'' + String(d.getFullYear()).slice(2),
-        value: delta,
+        label:     monthNames[d.getMonth()] + ' \'' + String(d.getFullYear()).slice(2),
+        value:     delta,
         isCurrent: i === 11,
       });
     }
 
-    console.info('[shd] monthly history for', entityId, ':', months);
+    console.info('[shd] history monthly for', entityId, ':', months);
     return months;
   }
 
@@ -4633,11 +4748,8 @@ class SmartHomeDashboardCardEditor extends LitElement {
   /* — Power — */
   _renderPower() {
     const p = this._config.power || {};
-    // Show current entity values to help user confirm they've picked the right ones
-    const todayVal = p.today_energy_sensor && this.hass ? num(this.hass.states[p.today_energy_sensor]?.state) : null;
-    const cumVal   = p.energy_sensor && this.hass ? num(this.hass.states[p.energy_sensor]?.state) : null;
-    const todayHint = todayVal !== null ? ` — current value: ${todayVal.toFixed(1)} kWh (expect < 50 kWh for a daily sensor)` : '';
-    const cumHint   = cumVal   !== null ? ` — current value: ${cumVal.toFixed(1)} kWh (expect hundreds/thousands for lifetime)` : '';
+    const cumVal = p.energy_sensor && this.hass ? num(this.hass.states[p.energy_sensor]?.state) : null;
+    const cumHint = cumVal !== null ? ` — current: ${cumVal.toFixed(1)} kWh` : '';
 
     return this._sectionShell('power', '⚡ Main Power', null, html`
       ${this._entityPicker({
@@ -4647,31 +4759,17 @@ class SmartHomeDashboardCardEditor extends LitElement {
         placeholder: 'sensor.em_home_power',
         onChange: (v) => this._setDeep(['power', 'power_sensor'], v),
       })}
-
-      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.7);margin:10px 0 4px;">📅 Today's usage</div>
       ${this._entityPicker({
-        label: `Daily sensor — resets to 0 every midnight${todayHint}`,
-        value: p.today_energy_sensor,
-        domains: ['sensor'],
-        placeholder: 'sensor.em_home_energy',
-        onChange: (v) => this._setDeep(['power', 'today_energy_sensor'], v),
-      })}
-
-      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.7);margin:10px 0 4px;">📊 Monthly chart (last 12 months)</div>
-      ${this._entityPicker({
-        label: `Lifetime sensor — never resets, always growing${cumHint}`,
+        label: `Energy sensor — lifetime cumulative kWh (state_class: total_increasing)${cumHint}`,
         value: p.energy_sensor,
         domains: ['sensor'],
-        placeholder: 'sensor.em_home_total_energy',
+        placeholder: 'sensor.em_home_energy',
         onChange: (v) => this._setDeep(['power', 'energy_sensor'], v),
       })}
-
       <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:6px;line-height:1.6;background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;">
-        <strong>How to find the right entities:</strong><br>
-        Developer Tools → States → search <code>em_home</code><br>
-        • Small number (&lt;50 kWh) that resets at midnight = <strong>Today's sensor</strong><br>
-        • Large number (hundreds/thousands kWh) that only ever grows = <strong>Monthly chart sensor</strong><br>
-        These are almost certainly two different entities.
+        Use a <strong>lifetime cumulative</strong> energy sensor (one that never resets — value only ever grows).<br>
+        Today's usage and monthly totals are calculated automatically using HA's statistics API.
+        For EM Home: use <code>sensor.em_home_energy</code> (consumed, 628 kWh).
       </div>
     `);
   }
