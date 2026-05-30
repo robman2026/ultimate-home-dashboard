@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.3.4';
+const CARD_VERSION = '0.3.6';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -646,6 +646,7 @@ function getStubConfig() {
       open_time: 14,
       close_time: 14,
       trigger_mode: false,
+      camera: '',
     },
     salt: {
       sensor: '',
@@ -1600,6 +1601,37 @@ const CARD_STYLES = `
     background: #0a0e1c;
     border-radius: 14px;
     padding: 14px;
+    position: relative;
+  }
+  .shd-garage-scene.shd-cam-mode {
+    padding: 0;
+    overflow: hidden;
+  }
+  .shd-garage-cam-status {
+    position: absolute;
+    bottom: 8px;
+    left: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(0,0,0,0.55);
+    padding: 3px 9px;
+    border-radius: 6px;
+    letter-spacing: .05em;
+    pointer-events: none;
+  }
+  .shd-garage-cam-live {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(239,68,68,0.85);
+    padding: 2px 7px;
+    border-radius: 4px;
+    letter-spacing: .05em;
+    pointer-events: none;
   }
   .shd-garage-scene svg { width: 100%; height: auto; display: block; }
   .shd-garage-ctrls {
@@ -1943,7 +1975,17 @@ class SmartHomeDashboardCard extends HTMLElement {
             </div>
           </div>
           <div class="shd-garage-grid">
-            <div class="shd-garage-scene">${this._garageSceneSVG()}</div>
+            <div class="shd-garage-scene${(this._config.garage && this._config.garage.camera) ? ' shd-cam-mode' : ''}" id="shd-garage-scene">
+              ${(this._config.garage && this._config.garage.camera)
+                ? `<shd-cam-stream
+                     id="shd-garage-cam"
+                     style="display:block;border-radius:11px;overflow:hidden;"
+                   ></shd-cam-stream>
+                   <div class="shd-garage-cam-live">● LIVE</div>
+                   <div class="shd-garage-cam-status" id="shd-gate-svg-status">STATUS: —</div>`
+                : this._garageSceneSVG()
+              }
+            </div>
             <div class="shd-garage-ctrls">
               <div class="shd-gctrl-label">Control</div>
               ${(this._config.garage && this._config.garage.trigger_mode)
@@ -3289,6 +3331,12 @@ class SmartHomeDashboardCard extends HTMLElement {
      PHASE 3 — GARAGE MODAL
      ════════════════════════════════════════════════════════════════ */
 
+  _gateStatusEl() {
+    // In camera mode the status label is a <div>; in SVG mode it's a <text> element.
+    return this.shadowRoot.getElementById('shd-gate-svg-status')
+        || this._gateStatusEl();
+  }
+
   _openGateModal() {
     const m = this.shadowRoot.getElementById('shd-gate-modal');
     if (!m) return;
@@ -3298,7 +3346,20 @@ class SmartHomeDashboardCard extends HTMLElement {
       this._gateOffset = this._gateOffsetFromState();
       this._applyGatePanels();
     }
+    // Wire the garage camera stream if configured.
+    this._updateGarageCam();
     this._updateGarageModal();
+  }
+
+  _updateGarageCam() {
+    const camEid = this._config.garage && this._config.garage.camera;
+    if (!camEid || !this._hass) return;
+    const camEl = this.shadowRoot.getElementById('shd-garage-cam');
+    if (!camEl) return;
+    camEl.hass     = this._hass;
+    camEl.entityId = camEid;
+    camEl.stateObj = this._hass.states[camEid] || null;
+    camEl.label    = '';
   }
 
   _gateOffsetFromState() {
@@ -3314,8 +3375,10 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   // Apply _gateOffset (0=closed, 100=open) to all panel SVG elements.
+  // No-op when a camera is configured (SVG is not rendered in that mode).
   _applyGatePanels() {
     if (!this.shadowRoot || this._gateOffset == null) return;
+    if (this._config.garage && this._config.garage.camera) return;
     const moveY = -(this._gateOffset * 1.26);
     const panels  = [{id:'shd-gp1',b:94},{id:'shd-gp2',b:116},{id:'shd-gp3',b:138},{id:'shd-gp4',b:160},{id:'shd-gp5',b:182}];
     const lines   = [{id:'shd-gl1',b:95},{id:'shd-gl2',b:117},{id:'shd-gl3',b:139},{id:'shd-gl4',b:161},{id:'shd-gl5',b:183}];
@@ -3361,7 +3424,7 @@ class SmartHomeDashboardCard extends HTMLElement {
 
       const label = direction > 0 ? 'OPENING' : 'CLOSING';
       const color = direction > 0 ? '#fbbf24' : '#f97316';
-      const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+      const svgText = this._gateStatusEl();
       if (svgText) svgText.textContent = 'STATUS: ' + label;
       const st = this.shadowRoot.getElementById('shd-gate-modal-status');
       if (st) { st.textContent = label; st.style.color = color; }
@@ -3398,13 +3461,16 @@ class SmartHomeDashboardCard extends HTMLElement {
     // state while the door is physically stopped mid-travel.
     this._gateStopped = true;
 
-    const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+    const svgText = this._gateStatusEl();
     if (svgText) svgText.textContent = 'STATUS: STOPPED';
     const st = this.shadowRoot.getElementById('shd-gate-modal-status');
     if (st) { st.textContent = 'STOPPED'; st.style.color = '#f87171'; st.classList.remove('shd-open'); }
   }
 
   _updateGarageModal() {
+    // Keep camera stream live if configured.
+    this._updateGarageCam();
+
     const cover   = this._config.garage && this._config.garage.cover;
     const contact = this._config.garage && this._config.garage.contact;
     const eid = cover || contact;
@@ -3445,7 +3511,7 @@ class SmartHomeDashboardCard extends HTMLElement {
 
       // Update labels only when not animating
       if (!this._gateAnimFrame) {
-        const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+        const svgText = this._gateStatusEl();
         if (svgText) svgText.textContent = 'STATUS: ' + label;
         const st = this.shadowRoot.getElementById('shd-gate-modal-status');
         if (st) { st.textContent = label; st.classList.toggle('shd-open', isOpen); }
@@ -3459,7 +3525,7 @@ class SmartHomeDashboardCard extends HTMLElement {
 
     // Label updates (skip while our animation or stop flag is active)
     if (!this._gateAnimFrame && !this._gateStopped) {
-      const svgText = this.shadowRoot.querySelector('#shd-gate-modal .shd-garage-scene svg text');
+      const svgText = this._gateStatusEl();
       if (svgText) svgText.textContent = 'STATUS: ' + label;
       const st = this.shadowRoot.getElementById('shd-gate-modal-status');
       if (st) { st.textContent = label; st.classList.toggle('shd-open', isOpen); }
@@ -3492,10 +3558,10 @@ class SmartHomeDashboardCard extends HTMLElement {
     if (!cover) return;
 
     if (action === 'trigger') {
-      // Single-button door: just pulse the cover open service (which we've mapped
-      // to the same pulse regardless of direction in the fixed template cover).
-      // The animation will respond when the contact sensor actually flips.
-      this._hass.callService('cover', 'open_cover', { entity_id: cover });
+      // Single-button door: use stop_cover which maps to switch.toggle.
+      // toggle always sends a pulse regardless of the switch's current state,
+      // unlike turn_on (no-op if already ON) or turn_off (no-op if already OFF).
+      this._hass.callService('cover', 'stop_cover', { entity_id: cover });
       return;
     }
 
@@ -4117,8 +4183,15 @@ class SmartHomeDashboardCardEditor extends LitElement {
         checked: !!g.trigger_mode,
         onChange: (v) => this._setDeep(['garage', 'trigger_mode'], v),
       })}
+      ${this._entityPicker({
+        label: 'Camera (optional — shows live feed instead of animation)',
+        value: g.camera,
+        domains: ['camera'],
+        placeholder: 'camera.garage',
+        onChange: (v) => this._setDeep(['garage', 'camera'], v),
+      })}
       <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:4px;line-height:1.5;">
-        💡 <strong>Single-button doors:</strong> enable Trigger mode and map all three cover actions to the same pulse in your <code>configuration.yaml</code>. The animation responds to the contact sensor flipping.
+        💡 <strong>Single-button doors:</strong> enable Trigger mode. The animation responds to the contact sensor flipping.
       </div>
     `);
   }
