@@ -669,8 +669,7 @@ function getStubConfig() {
     },
     power: {
       power_sensor: '',
-      energy_sensor: '',           // lifetime cumulative kWh — for monthly chart deltas
-      today_energy_sensor: '',     // daily-reset kWh — for "Today" stat (optional; if blank, derived from cumulative)
+      energy_sensor: '',
     },
     floors: [
       { id: 'garden',   label: 'Garden',       icon: '🌿', rooms: [] },
@@ -2995,7 +2994,7 @@ class SmartHomeDashboardCard extends HTMLElement {
       bat = num(getState(this._hass, cfg.battery_entity));
     }
     if (bat === null) {
-      bat = num(a.battery_level) ?? num(a.battery) ?? num(a.battery_pct);
+      bat = (num(a.battery_level) !== null ? num(a.battery_level) : (num(a.battery) !== null ? num(a.battery) : num(a.battery_pct)));
     }
 
     const batEl    = this.shadowRoot.getElementById('shd-mower-bat');
@@ -3142,7 +3141,7 @@ class SmartHomeDashboardCard extends HTMLElement {
       // Month start baseline = last day of previous month
       const lastDayPrev    = new Date(monthStart.getFullYear(), monthStart.getMonth(), 0);
       const lastDayPrevStr = lastDayPrev.toISOString().slice(0, 10);
-      const monthStartSum  = byDay[lastDayPrevStr] ?? null;
+      const monthStartSum  = byDay[lastDayPrevStr] !== undefined ? byDay[lastDayPrevStr] : null;
 
       // Live value = current state
       const liveObj = getStateObj(this._hass, entityId);
@@ -3155,7 +3154,7 @@ class SmartHomeDashboardCard extends HTMLElement {
       // Today: find yesterday's entry as start-of-today baseline
       const todayStart    = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const yesterdayStr  = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const yesterdaySum  = byDay[yesterdayStr] ?? null;
+      const yesterdaySum  = byDay[yesterdayStr] !== undefined ? byDay[yesterdayStr] : null;
 
       const today = (yesterdaySum !== null && liveVal !== null)
         ? Math.max(0, liveVal - yesterdaySum)
@@ -3889,8 +3888,8 @@ class SmartHomeDashboardCard extends HTMLElement {
       const lastDayThis    = isCurrent ? now : new Date(d.getFullYear(), d.getMonth() + 1, 0);
       const lastDayThisStr = lastDayThis.toISOString().slice(0, 10);
 
-      const startVal = byDay[lastDayPrevStr] ?? null;
-      const endVal   = isCurrent ? liveSum : (byDay[lastDayThisStr] ?? null);
+      const startVal = byDay[lastDayPrevStr] !== undefined ? byDay[lastDayPrevStr] : null;
+      const endVal   = isCurrent ? liveSum : (byDay[lastDayThisStr] !== undefined ? byDay[lastDayThisStr] : null);
 
       const delta = (startVal !== null && endVal !== null)
         ? Math.max(0, endVal - startVal)
@@ -4707,7 +4706,7 @@ class SmartHomeDashboardCardEditor extends LitElement {
   /* — Power — */
   _renderPower() {
     const p = this._config.power || {};
-    const cumVal = p.energy_sensor && this.hass ? num(this.hass.states[p.energy_sensor]?.state) : null;
+    const cumVal = p.energy_sensor && this.hass ? num((this.hass.states[p.energy_sensor] ? this.hass.states[p.energy_sensor].state : undefined)) : null;
     const cumHint = cumVal !== null ? ` — current: ${cumVal.toFixed(1)} kWh` : '';
 
     return this._sectionShell('power', '⚡ Main Power', null, html`
