@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.3.7';
+const CARD_VERSION = '0.3.9';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -656,6 +656,7 @@ function getStubConfig() {
     },
     mower: {
       entity: '',
+      battery_entity: '',
     },
     media: {
       spotify_entity: '',
@@ -668,7 +669,8 @@ function getStubConfig() {
     },
     power: {
       power_sensor: '',
-      energy_sensor: '',
+      energy_sensor: '',           // lifetime cumulative kWh — for monthly chart deltas
+      today_energy_sensor: '',     // daily-reset kWh — for "Today" stat (optional; if blank, derived from cumulative)
     },
     floors: [
       { id: 'garden',   label: 'Garden',       icon: '🌿', rooms: [] },
@@ -2948,43 +2950,65 @@ class SmartHomeDashboardCard extends HTMLElement {
 
   /* — Mower — */
   _updateMower() {
-    const eid = this._config.mower && this._config.mower.entity;
+    const cfg = this._config.mower || {};
+    const eid = cfg.entity;
     if (!eid) return;
     const o = getStateObj(this._hass, eid);
     if (!o) return;
     const state = o.state || 'unknown';
     const a = o.attributes || {};
+
+    // Animated SVG
     const svgWrap = this.shadowRoot.getElementById('shd-mower-svg');
     if (svgWrap) svgWrap.innerHTML = mowerSVG(state);
+
+    // Name — use friendly_name only (no status appended — status has its own line)
     const nameEl = this.shadowRoot.getElementById('shd-mower-name');
     if (nameEl) {
-      const fn = a.friendly_name || eid.split('.')[1].replace(/_/g, ' ');
-      nameEl.textContent = fn + ' · ' + mowerStatusLabel(state);
+      const fn = (a.friendly_name || '')
+        .replace(/\s*lawn[\s_-]*mower\s*/i, '')   // strip redundant "Lawn Mower" suffix
+        .trim()
+        || eid.split('.')[1].replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      nameEl.textContent = fn;
     }
+
+    // Status line
     const statusEl = this.shadowRoot.getElementById('shd-mower-status');
     if (statusEl) {
       statusEl.style.color = mowerStatusColor(state);
-      // Look for a battery / activity hint
-      let info = '';
-      if (state === 'docked') info = 'Idle at dock';
-      else if (state === 'mowing') info = 'Mowing';
-      else if (state === 'returning') info = 'Returning to dock';
-      else if (state === 'paused') info = 'Paused';
-      else if (state === 'error') info = a.error || 'Error';
-      else info = '—';
+      const info = state === 'docked'     ? 'Idle at dock'
+                 : state === 'mowing'     ? 'Mowing'
+                 : state === 'returning'  ? 'Returning to dock'
+                 : state === 'paused'     ? 'Paused'
+                 : state === 'error'      ? (a.error || 'Error')
+                 : mowerStatusLabel(state);
       statusEl.textContent = info;
     }
-    // Battery — try common attribute names
-    const bat = num(a.battery_level) || num(a.battery) || num(a.battery_pct);
-    const batEl = this.shadowRoot.getElementById('shd-mower-bat');
+
+    // Battery — prefer configured battery_entity; fall back to common attributes
+    let bat = null;
+    if (cfg.battery_entity) {
+      bat = num(getState(this._hass, cfg.battery_entity));
+    }
+    if (bat === null) {
+      bat = num(a.battery_level) ?? num(a.battery) ?? num(a.battery_pct);
+    }
+
+    const batEl    = this.shadowRoot.getElementById('shd-mower-bat');
     const batPctEl = this.shadowRoot.getElementById('shd-mower-bat-pct');
+    const batColor = bat !== null && bat < 15 ? '#ef4444' : bat !== null && bat < 30 ? '#f59e0b' : '#10b981';
     if (batEl) {
-      batEl.style.width = (bat !== null ? bat : 0) + '%';
-      batEl.classList.toggle('shd-low', bat !== null && bat < 30 && bat >= 15);
+      batEl.style.width      = (bat !== null ? Math.min(100, bat) : 0) + '%';
+      batEl.style.background = batColor;
+      batEl.classList.toggle('shd-low',      bat !== null && bat < 30 && bat >= 15);
       batEl.classList.toggle('shd-critical', bat !== null && bat < 15);
     }
-    if (batPctEl) batPctEl.textContent = (bat !== null ? Math.round(bat) + '%' : '—');
-    // Card error state styling
+    if (batPctEl) {
+      batPctEl.textContent   = bat !== null ? Math.round(bat) + '%' : '—';
+      batPctEl.style.color   = batColor;
+    }
+
+    // Error card state
     const card = this.shadowRoot.getElementById('shd-mower-card');
     if (card) card.classList.toggle('shd-mower-error', state === 'error');
   }
@@ -2992,32 +3016,33 @@ class SmartHomeDashboardCard extends HTMLElement {
   /* — Power — */
   _updatePower() {
     const cfg = this._config.power || {};
-    if (!cfg.power_sensor && !cfg.energy_sensor) return;
+    if (!cfg.power_sensor && !cfg.energy_sensor && !cfg.today_energy_sensor) return;
+
+    // Current watts
     const watts = powerToWatts(this._hass, cfg.power_sensor);
-    const nowEl = this.shadowRoot.getElementById('shd-power-now');
+    const nowEl  = this.shadowRoot.getElementById('shd-power-now');
     const unitEl = this.shadowRoot.getElementById('shd-power-unit');
     if (nowEl && unitEl) {
-      if (watts === null) {
-        nowEl.textContent = '—';
-        unitEl.textContent = 'no data';
-      } else if (Math.abs(watts) >= 1000) {
-        nowEl.textContent = (watts / 1000).toFixed(1);
-        unitEl.textContent = 'kW now';
+      if (watts === null) { nowEl.textContent = '—'; unitEl.textContent = 'no data'; }
+      else if (Math.abs(watts) >= 1000) { nowEl.textContent = (watts / 1000).toFixed(1); unitEl.textContent = 'kW now'; }
+      else { nowEl.textContent = Math.round(watts); unitEl.textContent = 'W now'; }
+    }
+
+    // Today — use today_energy_sensor directly if configured (daily-reset entity)
+    const todayEl = this.shadowRoot.getElementById('shd-power-today');
+    if (todayEl) {
+      if (cfg.today_energy_sensor) {
+        const todayVal = num(getState(this._hass, cfg.today_energy_sensor));
+        todayEl.textContent = todayVal !== null ? todayVal.toFixed(1) + ' kWh' : '—';
       } else {
-        nowEl.textContent = Math.round(watts);
-        unitEl.textContent = 'W now';
+        todayEl.textContent = (this._energyData && this._energyData.today != null)
+          ? this._energyData.today.toFixed(1) + ' kWh' : '—';
       }
     }
-    // Today + month: derive from the energy sensor + history (Phase 2a does
-    // a best-effort fetch every 5 minutes; if no energy_sensor configured,
-    // both show "—").
+
+    // Month — always from history fetch on cumulative energy_sensor
     this._ensureEnergyFetch();
-    const todayEl = this.shadowRoot.getElementById('shd-power-today');
     const monthEl = this.shadowRoot.getElementById('shd-power-month');
-    if (todayEl) {
-      todayEl.textContent = (this._energyData && this._energyData.today != null)
-        ? this._energyData.today.toFixed(1) + ' kWh' : '—';
-    }
     if (monthEl) {
       monthEl.textContent = (this._energyData && this._energyData.month != null)
         ? Math.round(this._energyData.month) + ' kWh' : '—';
@@ -3665,7 +3690,14 @@ class SmartHomeDashboardCard extends HTMLElement {
     }
     const todayEl = this.shadowRoot.getElementById('shd-pmod-today');
     const monthEl = this.shadowRoot.getElementById('shd-pmod-month');
-    if (todayEl) todayEl.textContent = (this._energyData && this._energyData.today != null) ? this._energyData.today.toFixed(1) : '—';
+    if (todayEl) {
+      if (cfg.today_energy_sensor) {
+        const v = num(getState(this._hass, cfg.today_energy_sensor));
+        todayEl.textContent = v !== null ? v.toFixed(1) : '—';
+      } else {
+        todayEl.textContent = (this._energyData && this._energyData.today != null) ? this._energyData.today.toFixed(1) : '—';
+      }
+    }
     if (monthEl) monthEl.textContent = (this._energyData && this._energyData.month != null) ? Math.round(this._energyData.month) : '—';
 
     // Load chart
@@ -4397,6 +4429,16 @@ class SmartHomeDashboardCardEditor extends LitElement {
         placeholder: 'lawn_mower.husqvarna',
         onChange: (v) => this._setDeep(['mower', 'entity'], v),
       })}
+      ${this._entityPicker({
+        label: 'Battery sensor (optional — for reliable battery display)',
+        value: m.battery_entity,
+        domains: ['sensor'],
+        placeholder: 'sensor.husqvarna_automower_battery',
+        onChange: (v) => this._setDeep(['mower', 'battery_entity'], v),
+      })}
+      <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:4px;line-height:1.5;">
+        If left empty, battery level is read from the mower entity's attributes.
+      </div>
     `);
   }
 
@@ -4538,14 +4580,24 @@ class SmartHomeDashboardCardEditor extends LitElement {
         onChange: (v) => this._setDeep(['power', 'power_sensor'], v),
       })}
       ${this._entityPicker({
-        label: 'Energy sensor (cumulative kWh — required for monthly chart)',
+        label: "Today's energy — daily reset kWh sensor",
+        value: p.today_energy_sensor,
+        domains: ['sensor'],
+        placeholder: 'sensor.em_home_energy',
+        onChange: (v) => this._setDeep(['power', 'today_energy_sensor'], v),
+      })}
+      ${this._entityPicker({
+        label: 'Cumulative energy — lifetime kWh (never resets) — required for monthly chart',
         value: p.energy_sensor,
         domains: ['sensor'],
-        placeholder: 'sensor.em_home_energy_total',
+        placeholder: 'sensor.em_home_energy_consumed',
         onChange: (v) => this._setDeep(['power', 'energy_sensor'], v),
       })}
-      <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:4px;line-height:1.5;">
-        Monthly chart fetches deltas via HA's history API at each month boundary.
+      <div style="font-size:10px;color:var(--secondary-text-color, rgba(255,255,255,0.5));margin-top:6px;line-height:1.6;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+        <strong style="color:rgba(255,255,255,0.7);">Why two energy sensors?</strong><br>
+        The <em>Today</em> sensor resets to 0 at midnight — great for "today's usage".<br>
+        The <em>Cumulative</em> sensor never resets — monthly chart subtracts readings at month boundaries to get each month's delta.<br>
+        For EM Home: check Developer Tools → States for <code>sensor.em_home_energy_consumed</code> or similar lifetime entities.
       </div>
     `);
   }
