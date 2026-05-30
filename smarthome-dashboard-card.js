@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.4.3';
+const CARD_VERSION = '0.4.4';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -1857,49 +1857,54 @@ class SmartHomeDashboardCard extends HTMLElement {
   setConfig(config) {
     if (!config) throw new Error('Invalid configuration');
 
-    // Deep merge with stub config so users only need to provide what they want to change.
-    const stub = getStubConfig();
-    this._config = {
-      ...stub,
-      ...config,
-      header:       { ...stub.header,       ...(config.header || {}) },
-      garage:       { ...stub.garage,       ...(config.garage || {}) },
-      salt:         { ...stub.salt,         ...(config.salt || {}) },
-      mower:        { ...stub.mower,        ...(config.mower || {}) },
-      media:        { ...stub.media,        ...(config.media || {}) },
-      surveillance: { ...stub.surveillance, ...(config.surveillance || {}) },
-      power:        { ...stub.power,        ...(config.power || {}) },
-    };
-    if (this._config.media && config.media && config.media.apps) {
-      this._config.media.apps = { ...stub.media.apps, ...config.media.apps };
-    }
-    // Floors: replace whole array if user provides one, then normalize to canonical shape.
-    // We accept {id,label,icon} (strict), {name,icon} (HA-natural), or {id,name,icon} (both).
-    if (config.floors && Array.isArray(config.floors) && config.floors.length > 0) {
-      const normalized = normalizeFloors(config.floors);
-      if (normalized) this._config.floors = normalized;
-    } else {
-      // Stub floors are already canonical; normalize defensively anyway.
-      this._config.floors = normalizeFloors(this._config.floors) || [];
-    }
+    try {
+      // Deep merge with stub config so users only need to provide what they want to change.
+      const stub = getStubConfig();
+      this._configError = null; // clear any previous error
+      this._config = {
+        ...stub,
+        ...config,
+        header:       { ...stub.header,       ...(config.header || {}) },
+        garage:       { ...stub.garage,       ...(config.garage || {}) },
+        salt:         { ...stub.salt,         ...(config.salt || {}) },
+        mower:        { ...stub.mower,        ...(config.mower || {}) },
+        media:        { ...stub.media,        ...(config.media || {}) },
+        surveillance: { ...stub.surveillance, ...(config.surveillance || {}) },
+        power:        { ...stub.power,        ...(config.power || {}) },
+      };
+      if (this._config.media && config.media && config.media.apps) {
+        this._config.media.apps = { ...stub.media.apps, ...config.media.apps };
+      }
+      // Floors: replace whole array if user provides one, then normalize to canonical shape.
+      if (config.floors && Array.isArray(config.floors) && config.floors.length > 0) {
+        const normalized = normalizeFloors(config.floors);
+        if (normalized) this._config.floors = normalized;
+      } else {
+        this._config.floors = normalizeFloors(this._config.floors) || [];
+      }
 
-    // Determine initial floor: prefer default_floor if it matches a configured floor;
-    // otherwise fall back to the first floor (never show "Unknown").
-    const validFloorIds = this._config.floors.map(f => f.id);
-    if (!this._currentFloor || !validFloorIds.includes(this._currentFloor)) {
-      this._currentFloor = (validFloorIds.includes(this._config.default_floor))
-        ? this._config.default_floor
-        : (validFloorIds[0] || null);
-    }
+      // Determine initial floor
+      const validFloorIds = this._config.floors.map(f => f.id);
+      if (!this._currentFloor || !validFloorIds.includes(this._currentFloor)) {
+        this._currentFloor = (validFloorIds.includes(this._config.default_floor))
+          ? this._config.default_floor
+          : (validFloorIds[0] || null);
+      }
 
-    if (this._built) {
-      this._lastRoomsSig = null;
-      // Clear energy fetch cache so new entity takes effect immediately
-      this._energyFetchAt = null;
-      this._energyData = null;
-      this._monthlyChartData = null;
-      this._monthlyChartCacheAt = null;
-      this._render();
+      if (this._built) {
+        this._lastRoomsSig = null;
+        this._energyFetchAt = null;
+        this._energyData = null;
+        this._monthlyChartData = null;
+        this._monthlyChartCacheAt = null;
+        this._render();
+      }
+    } catch (e) {
+      console.error('[shd] setConfig error:', e);
+      // Store a minimal working config so the card renders an error instead of going blank
+      this._config = this._config || getStubConfig();
+      this._configError = e.message || String(e);
+      if (this._built) this._render();
     }
   }
 
@@ -1947,18 +1952,27 @@ class SmartHomeDashboardCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>${CARD_STYLES}</style>
       <div class="shd-root">
+        ${this._configError ? `
+          <div style="padding:24px;color:#ef4444;font-family:monospace;font-size:13px;background:#1a0505;border:1px solid #ef4444;border-radius:12px;margin:12px;">
+            <strong>⚠ Smart Home Dashboard Card — Config Error</strong><br><br>
+            ${this._esc(this._configError)}<br><br>
+            <span style="opacity:0.6;font-size:11px;">Check browser console for full details. This error occurred in setConfig().</span>
+          </div>
+        ` : `
         <div class="shd-app">
           ${this._renderTopbar()}
           ${this._renderMain()}
         </div>
         ${this._renderModals()}
+        `}
       </div>
     `;
-    this._attachListeners();
-    this._startResizeObserver();
-    this._updateClock();
-    // Initial rooms render (data comes from current floor)
-    this._renderRooms();
+    if (!this._configError) {
+      this._attachListeners();
+      this._startResizeObserver();
+      this._updateClock();
+      this._renderRooms();
+    }
   }
 
   _renderModals() {
