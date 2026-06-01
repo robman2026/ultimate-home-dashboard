@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.4.5';
+const CARD_VERSION = '0.4.6';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -4087,18 +4087,51 @@ class SmartHomeDashboardCardEditor extends LitElement {
   }
 
   setConfig(config) {
-    const stub = getStubConfig();
-    this._config = {
-      ...stub,
-      ...config,
-      header:       { ...stub.header,       ...(config && config.header || {}) },
-      garage:       { ...stub.garage,       ...(config && config.garage || {}) },
-      salt:         { ...stub.salt,         ...(config && config.salt || {}) },
-      mower:        { ...stub.mower,        ...(config && config.mower || {}) },
-      media:        { ...stub.media,        ...(config && config.media || {}) },
-      surveillance: { ...stub.surveillance, ...(config && config.surveillance || {}) },
-      power:        { ...stub.power,        ...(config && config.power || {}) },
-    };
+    try {
+      this._editorError = null;
+      const stub = getStubConfig();
+      const c = config || {};
+
+      // Defensive: members.members double-nesting bug (HA editor occasionally wraps)
+      let members = c.members;
+      if (members && !Array.isArray(members) && Array.isArray(members.members)) {
+        members = members.members;
+      }
+      if (!Array.isArray(members)) members = [];
+
+      // Defensive: floors should be an array
+      let floors = c.floors;
+      if (!Array.isArray(floors)) floors = stub.floors;
+
+      // Defensive: surveillance.cameras
+      let surveillance = c.surveillance || {};
+      if (!Array.isArray(surveillance.cameras)) surveillance = { cameras: [] };
+
+      this._config = {
+        ...stub,
+        ...c,
+        members,
+        floors,
+        header:       { ...stub.header,       ...((c && c.header)       || {}) },
+        garage:       { ...stub.garage,       ...((c && c.garage)       || {}) },
+        salt:         { ...stub.salt,         ...((c && c.salt)         || {}) },
+        mower:        { ...stub.mower,        ...((c && c.mower)        || {}) },
+        media:        { ...stub.media,        ...((c && c.media)        || {}) },
+        surveillance: { ...stub.surveillance, ...surveillance },
+        power:        { ...stub.power,        ...((c && c.power)        || {}) },
+      };
+      // Make sure media.apps is an object
+      if (this._config.media && (!this._config.media.apps || typeof this._config.media.apps !== 'object')) {
+        this._config.media.apps = stub.media.apps;
+      }
+      // Make sure labels is an array
+      if (!Array.isArray(this._config.labels)) this._config.labels = [];
+    } catch (e) {
+      console.error('[shd-editor] setConfig error:', e);
+      this._editorError = String(e && e.message || e);
+      // Fallback to a minimal valid config so the editor still renders
+      this._config = getStubConfig();
+    }
   }
 
   async firstUpdated() {
@@ -4307,7 +4340,23 @@ class SmartHomeDashboardCardEditor extends LitElement {
   }
 
   render() {
-    if (!this._config) return html`<div>Loading...</div>`;
+    if (!this._config) return html`<div style="padding:20px;color:#888;">Loading editor…</div>`;
+
+    // Helper to safely render a section — isolates failures so one bad section
+    // doesn't kill the entire editor panel.
+    const safe = (name, fn) => {
+      try {
+        return fn();
+      } catch (e) {
+        console.error(`[shd-editor] Section "${name}" crashed:`, e);
+        return html`
+          <div style="background:#2a0808;border:1px solid #ef4444;border-radius:10px;padding:12px;margin-bottom:8px;color:#fca5a5;font-size:12px;font-family:monospace;">
+            <strong>⚠ ${name} section error:</strong> ${String(e && e.message || e)}<br>
+            <span style="opacity:0.6;font-size:10px;">Other sections should still work.</span>
+          </div>
+        `;
+      }
+    };
 
     return html`
       <div class="ed-note">
@@ -4316,18 +4365,25 @@ class SmartHomeDashboardCardEditor extends LitElement {
         Changes save via HA's native flow (no extra buttons needed).
       </div>
 
-      ${this._renderAppearance()}
-      ${this._renderHeader()}
-      ${this._renderMembers()}
-      ${this._renderGarage()}
-      ${this._renderSalt()}
-      ${this._renderMower()}
-      ${this._renderSpotify()}
-      ${this._renderTV()}
-      ${this._renderSurveillance()}
-      ${this._renderPower()}
-      ${this._renderFloors()}
-      ${this._renderLabels()}
+      ${this._editorError ? html`
+        <div style="background:#2a0808;border:1px solid #ef4444;border-radius:10px;padding:12px;margin-bottom:10px;color:#fca5a5;font-size:12px;">
+          <strong>⚠ Config load warning:</strong> ${this._editorError}<br>
+          <span style="opacity:0.6;font-size:11px;">Using default values where needed.</span>
+        </div>
+      ` : ''}
+
+      ${safe('Appearance',   () => this._renderAppearance())}
+      ${safe('Header',       () => this._renderHeader())}
+      ${safe('Members',      () => this._renderMembers())}
+      ${safe('Garage',       () => this._renderGarage())}
+      ${safe('Salt',         () => this._renderSalt())}
+      ${safe('Mower',        () => this._renderMower())}
+      ${safe('Spotify',      () => this._renderSpotify())}
+      ${safe('TV',           () => this._renderTV())}
+      ${safe('Surveillance', () => this._renderSurveillance())}
+      ${safe('Power',        () => this._renderPower())}
+      ${safe('Floors',       () => this._renderFloors())}
+      ${safe('Labels',       () => this._renderLabels())}
     `;
   }
 
