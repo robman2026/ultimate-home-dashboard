@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.4.6';
+const CARD_VERSION = '0.4.7';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -2733,23 +2733,27 @@ class SmartHomeDashboardCard extends HTMLElement {
      ════════════════════════════════════════════════════════════════ */
   _updateWidgets(prevHass) {
     if (!this._hass || !this.shadowRoot) return;
-    this._updateClockSun();
-    this._updateWeather();
-    this._updateMembers();
-    this._updateGarage();
-    this._updateSalt();
-    this._updateSpotify();
-    this._updateTV();
-    this._updateSurveillance();
-    this._updateMower();
-    this._updatePower();
-    // Rooms: re-render the grid contents (cheap — just innerHTML for the small grid).
-    // This keeps sensor dots / temp / lights-on state in sync without re-rendering
-    // the entire shadow tree.
-    this._renderRooms();
+    // Isolate each widget update so a single failure (e.g. a missing entity,
+    // a malformed state, a typo) doesn't take down the entire card.
+    const safe = (name, fn) => {
+      try { fn(); } catch (e) { console.error('[shd] _update' + name + ' crashed:', e); }
+    };
+    safe('ClockSun',     () => this._updateClockSun());
+    safe('Weather',      () => this._updateWeather());
+    safe('Members',      () => this._updateMembers());
+    safe('Garage',       () => this._updateGarage());
+    safe('Salt',         () => this._updateSalt());
+    safe('Spotify',      () => this._updateSpotify());
+    safe('TV',           () => this._updateTV());
+    safe('Surveillance', () => this._updateSurveillance());
+    safe('Mower',        () => this._updateMower());
+    safe('Power',        () => this._updatePower());
+    safe('Rooms',        () => this._renderRooms());
     // If garage modal is open, keep its status in sync
     const gm = this.shadowRoot.getElementById('shd-gate-modal');
-    if (gm && gm.classList.contains('shd-show')) this._updateGarageModal();
+    if (gm && gm.classList.contains('shd-show')) {
+      safe('GarageModal', () => this._updateGarageModal());
+    }
   }
 
   /* — Clock + sun — */
@@ -3063,6 +3067,7 @@ class SmartHomeDashboardCard extends HTMLElement {
 
     // Today — use today_energy_sensor directly if configured (daily-reset entity)
     const todaySensor = cfg.today_energy_sensor && cfg.today_energy_sensor.trim();
+    const todayEl = this.shadowRoot.getElementById('shd-power-today');
     if (todayEl) {
       if (todaySensor) {
         const todayVal = num(getState(this._hass, todaySensor));
