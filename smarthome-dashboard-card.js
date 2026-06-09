@@ -3876,27 +3876,49 @@ class SmartHomeDashboardCard extends HTMLElement {
       this._renderMonthlyChart(data);
     } catch (e) {
       console.error('[shd] monthly chart error:', e);
-      wrap.innerHTML = '<div class="shd-pmod-error">History fetch failed: <strong>' + this._esc(e && e.message || String(e)) + '</strong><br>Check browser console for details.</div>';
+      const msg = e instanceof Error ? e.message : (e && (e.message || e.error || e.code) ? String(e.message || e.error || e.code) : JSON.stringify(e));
+      wrap.innerHTML = '<div class="shd-pmod-error">History fetch failed: <strong>' + this._esc(msg) + '</strong><br>Check browser console for details.</div>';
     }
   }
 
   async _fetchMonthlyHistory(entityId) {
-    if (!this._hass || !this._hass.callApi) throw new Error('hass.callApi not available');
+    if (!this._hass) throw new Error('hass not available');
 
     const now     = new Date();
     const start12 = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
-    // Fetch daily statistics for the past 12 months.
+    // Fetch daily statistics for the past 12 months via WebSocket API.
     // Each entry: { start: "2025-05-01T00:00:00+...", sum: <cumulative kWh at end of day> }
-    const body = {
-      start_time:    start12.toISOString(),
-      end_time:      now.toISOString(),
-      statistic_ids: [entityId],
-      period:        'day',
-      types:         ['sum'],
-    };
+    let result;
+    try {
+      if (this._hass.callWS) {
+        result = await this._hass.callWS({
+          type:          'recorder/statistics_during_period',
+          start_time:    start12.toISOString(),
+          end_time:      now.toISOString(),
+          statistic_ids: [entityId],
+          period:        'day',
+          types:         ['sum'],
+        });
+      } else if (this._hass.callApi) {
+        result = await this._hass.callApi('POST', 'recorder/statistics_during_period', {
+          start_time:    start12.toISOString(),
+          end_time:      now.toISOString(),
+          statistic_ids: [entityId],
+          period:        'day',
+          types:         ['sum'],
+        });
+      } else {
+        throw new Error('No API method available on hass object');
+      }
+    } catch (apiErr) {
+      // HA may throw plain objects; extract a readable message
+      const msg = (apiErr && (apiErr.message || apiErr.error || apiErr.code))
+        ? String(apiErr.message || apiErr.error || apiErr.code)
+        : JSON.stringify(apiErr);
+      throw new Error('Statistics API error: ' + msg);
+    }
 
-    const result  = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
     const entries = result && result[entityId];
 
     if (!Array.isArray(entries) || entries.length === 0) {
