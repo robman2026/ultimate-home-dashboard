@@ -2476,14 +2476,14 @@ class SmartHomeDashboardCard extends HTMLElement {
     const hasSurv    = (this._config.surveillance && Array.isArray(this._config.surveillance.cameras) && this._config.surveillance.cameras.length > 0);
     // Pick default active tab: first one that has content
     const activeTab = this._activeMediaTab
-      || (hasSpotify ? 'spotify' : (hasTV ? 'tv' : (hasSurv ? 'surv' : 'spotify')));
+      || (hasSpotify ? 'spotify' : (hasSurv ? 'surv' : (hasTV ? 'tv' : 'spotify')));
     this._activeMediaTab = activeTab;
     return `
       <div class="shd-card">
         <div class="shd-media-tabs">
           ${hasSpotify ? `<div class="shd-mtab${activeTab==='spotify'?' shd-active':''}" data-mtab="spotify">🎵 Spotify</div>` : ''}
-          ${hasTV ?      `<div class="shd-mtab${activeTab==='tv'?' shd-active':''}" data-mtab="tv">📺 TV</div>` : ''}
           ${hasSurv ?    `<div class="shd-mtab${activeTab==='surv'?' shd-active':''}" data-mtab="surv">📷 Surveillance</div>` : ''}
+          ${hasTV ?      `<div class="shd-mtab${activeTab==='tv'?' shd-active':''}" data-mtab="tv">📺 TV</div>` : ''}
           ${(!hasSpotify && !hasTV && !hasSurv) ? `<div style="font-size:10px;color:var(--shd-text-muted);padding:4px;">Configure media in editor (Phase 2b)</div>` : ''}
         </div>
 
@@ -2614,8 +2614,18 @@ class SmartHomeDashboardCard extends HTMLElement {
         const id = tab.dataset.floor;
         if (id && id !== this._currentFloor) {
           this._currentFloor = id;
-          this._lastRoomsSig = null; // force re-render
-          this._render();
+          this._lastRoomsSig = null; // force rooms re-render
+          // Update active state on tabs without full re-render
+          root.querySelectorAll('.shd-floor-tab').forEach(t => {
+            t.classList.toggle('shd-active', t.dataset.floor === id);
+          });
+          // Update rooms header label
+          const floors = this._config.floors || [];
+          const currentFloor = floors.find(f => f.id === id);
+          const floorLabelEl = root.querySelector('.shd-rh-floor');
+          if (floorLabelEl && currentFloor) floorLabelEl.textContent = currentFloor.label;
+          // Re-render only the rooms grid (center column)
+          this._renderRooms();
         }
       });
     });
