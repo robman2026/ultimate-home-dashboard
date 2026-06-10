@@ -3465,14 +3465,16 @@ class SmartHomeDashboardCard extends HTMLElement {
     }
 
     // Lights / switches — only if configured
+    const lightsRaw = Array.isArray(room.lights) ? room.lights : [];
     if (lightEids.length > 0) {
       const onCount = this._roomLightsOn(room);
       html += '<div class="shd-rmod-section">';
       html += '<div class="shd-rmod-section-title">💡 Lights &amp; Switches <span class="shd-rmod-count">' + onCount + ' of ' + lightEids.length + ' on</span></div>';
-      lightEids.forEach(eid => {
+      lightEids.forEach((eid, idx) => {
         const o = getStateObj(hass, eid);
         const on = (o && o.state === 'on');
-        const fn = (o && o.attributes && o.attributes.friendly_name) || eid;
+        const configLabel = (typeof lightsRaw[idx] === 'object' && lightsRaw[idx] && lightsRaw[idx].label) ? lightsRaw[idx].label : null;
+        const fn = configLabel || (o && o.attributes && o.attributes.friendly_name) || eid;
         html += '<div class="shd-light-row' + (on ? ' shd-light-on' : '') + '" data-shd-light-toggle="' + this._esc(eid) + '">';
         html += '<div class="shd-light-dot' + (on ? ' shd-on' : '') + '"></div>';
         html += '<div class="shd-light-name">' + this._esc(fn) + '</div>';
@@ -5011,6 +5013,12 @@ class SmartHomeDashboardCardEditor extends LitElement {
                 })}
                 <button class="ed-remove-btn" @click=${() => this._removeLight(fi, ri, li)} title="Remove">✕</button>
               </div>
+              ${this._textField({
+                label: 'Label (optional)',
+                value: (typeof l === 'object' && l && l.label) ? l.label : '',
+                placeholder: 'e.g. Workbench Light',
+                onChange: (v) => this._updateLightLabel(fi, ri, li, v),
+              })}
             `)}
             <button class="ed-add-btn" @click=${() => this._addLight(fi, ri)}>+ Add light or switch</button>
 
@@ -5127,7 +5135,24 @@ class SmartHomeDashboardCardEditor extends LitElement {
     floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
     const room = { ...(floor.rooms[ri] || {}) };
     room.lights = Array.isArray(room.lights) ? room.lights.slice() : [];
-    room.lights[li] = value;
+    const existing = room.lights[li];
+    // Preserve label if the existing entry is an object
+    const label = (typeof existing === 'object' && existing && existing.label) ? existing.label : undefined;
+    room.lights[li] = label ? { entity: value, label } : value;
+    floor.rooms[ri] = room;
+    list[fi] = floor;
+    this._set('floors', list);
+  }
+
+  _updateLightLabel(fi, ri, li, label) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    const room = { ...(floor.rooms[ri] || {}) };
+    room.lights = Array.isArray(room.lights) ? room.lights.slice() : [];
+    const existing = room.lights[li];
+    const entity = typeof existing === 'string' ? existing : (existing && existing.entity) || '';
+    room.lights[li] = label ? { entity, label } : entity;
     floor.rooms[ri] = room;
     list[fi] = floor;
     this._set('floors', list);
