@@ -3465,14 +3465,16 @@ class SmartHomeDashboardCard extends HTMLElement {
     }
 
     // Lights / switches — only if configured
+    const lightsRaw = Array.isArray(room.lights) ? room.lights : [];
     if (lightEids.length > 0) {
       const onCount = this._roomLightsOn(room);
       html += '<div class="shd-rmod-section">';
       html += '<div class="shd-rmod-section-title">💡 Lights &amp; Switches <span class="shd-rmod-count">' + onCount + ' of ' + lightEids.length + ' on</span></div>';
-      lightEids.forEach(eid => {
+      lightEids.forEach((eid, idx) => {
         const o = getStateObj(hass, eid);
         const on = (o && o.state === 'on');
-        const fn = (o && o.attributes && o.attributes.friendly_name) || eid;
+        const configLabel = (typeof lightsRaw[idx] === 'object' && lightsRaw[idx] && lightsRaw[idx].label) ? lightsRaw[idx].label : null;
+        const fn = configLabel || (o && o.attributes && o.attributes.friendly_name) || eid;
         html += '<div class="shd-light-row' + (on ? ' shd-light-on' : '') + '" data-shd-light-toggle="' + this._esc(eid) + '">';
         html += '<div class="shd-light-dot' + (on ? ' shd-on' : '') + '"></div>';
         html += '<div class="shd-light-name">' + this._esc(fn) + '</div>';
@@ -3876,27 +3878,49 @@ class SmartHomeDashboardCard extends HTMLElement {
       this._renderMonthlyChart(data);
     } catch (e) {
       console.error('[shd] monthly chart error:', e);
-      wrap.innerHTML = '<div class="shd-pmod-error">History fetch failed: <strong>' + this._esc(e && e.message || String(e)) + '</strong><br>Check browser console for details.</div>';
+      const msg = e instanceof Error ? e.message : (e && (e.message || e.error || e.code) ? String(e.message || e.error || e.code) : JSON.stringify(e));
+      wrap.innerHTML = '<div class="shd-pmod-error">History fetch failed: <strong>' + this._esc(msg) + '</strong><br>Check browser console for details.</div>';
     }
   }
 
   async _fetchMonthlyHistory(entityId) {
-    if (!this._hass || !this._hass.callApi) throw new Error('hass.callApi not available');
+    if (!this._hass) throw new Error('hass not available');
 
     const now     = new Date();
     const start12 = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
-    // Fetch daily statistics for the past 12 months.
+    // Fetch daily statistics for the past 12 months via WebSocket API.
     // Each entry: { start: "2025-05-01T00:00:00+...", sum: <cumulative kWh at end of day> }
-    const body = {
-      start_time:    start12.toISOString(),
-      end_time:      now.toISOString(),
-      statistic_ids: [entityId],
-      period:        'day',
-      types:         ['sum'],
-    };
+    let result;
+    try {
+      if (this._hass.callWS) {
+        result = await this._hass.callWS({
+          type:          'recorder/statistics_during_period',
+          start_time:    start12.toISOString(),
+          end_time:      now.toISOString(),
+          statistic_ids: [entityId],
+          period:        'day',
+          types:         ['sum'],
+        });
+      } else if (this._hass.callApi) {
+        result = await this._hass.callApi('POST', 'recorder/statistics_during_period', {
+          start_time:    start12.toISOString(),
+          end_time:      now.toISOString(),
+          statistic_ids: [entityId],
+          period:        'day',
+          types:         ['sum'],
+        });
+      } else {
+        throw new Error('No API method available on hass object');
+      }
+    } catch (apiErr) {
+      // HA may throw plain objects; extract a readable message
+      const msg = (apiErr && (apiErr.message || apiErr.error || apiErr.code))
+        ? String(apiErr.message || apiErr.error || apiErr.code)
+        : JSON.stringify(apiErr);
+      throw new Error('Statistics API error: ' + msg);
+    }
 
-    const result  = await this._hass.callApi('POST', 'recorder/statistics_during_period', body);
     const entries = result && result[entityId];
 
     if (!Array.isArray(entries) || entries.length === 0) {
@@ -4989,6 +5013,12 @@ class SmartHomeDashboardCardEditor extends LitElement {
                 })}
                 <button class="ed-remove-btn" @click=${() => this._removeLight(fi, ri, li)} title="Remove">✕</button>
               </div>
+              ${this._textField({
+                label: 'Label (optional)',
+                value: (typeof l === 'object' && l && l.label) ? l.label : '',
+                placeholder: 'e.g. Workbench Light',
+                onChange: (v) => this._updateLightLabel(fi, ri, li, v),
+              })}
             `)}
             <button class="ed-add-btn" @click=${() => this._addLight(fi, ri)}>+ Add light or switch</button>
 
@@ -5105,7 +5135,24 @@ class SmartHomeDashboardCardEditor extends LitElement {
     floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
     const room = { ...(floor.rooms[ri] || {}) };
     room.lights = Array.isArray(room.lights) ? room.lights.slice() : [];
-    room.lights[li] = value;
+    const existing = room.lights[li];
+    // Preserve label if the existing entry is an object
+    const label = (typeof existing === 'object' && existing && existing.label) ? existing.label : undefined;
+    room.lights[li] = label ? { entity: value, label } : value;
+    floor.rooms[ri] = room;
+    list[fi] = floor;
+    this._set('floors', list);
+  }
+
+  _updateLightLabel(fi, ri, li, label) {
+    const list = (this._config.floors || []).slice();
+    const floor = { ...(list[fi] || {}) };
+    floor.rooms = Array.isArray(floor.rooms) ? floor.rooms.slice() : [];
+    const room = { ...(floor.rooms[ri] || {}) };
+    room.lights = Array.isArray(room.lights) ? room.lights.slice() : [];
+    const existing = room.lights[li];
+    const entity = typeof existing === 'string' ? existing : (existing && existing.entity) || '';
+    room.lights[li] = label ? { entity, label } : entity;
     floor.rooms[ri] = room;
     list[fi] = floor;
     this._set('floors', list);
