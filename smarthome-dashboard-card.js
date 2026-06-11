@@ -1421,6 +1421,63 @@ const CARD_STYLES = `
   .shd-r-sensor.shd-rs-warn   { background: rgba(245,158,11,0.12); color: #f59e0b; }
   .shd-r-sensor.shd-rs-ok     { background: rgba(16,185,129,0.10); color: #10b981; }
 
+  /* ── Room card style: PANEL (desktop only) ──────────────────────
+     Header band + large stacked climate values + big status chips.
+     Selected via config.room_card_style = 'panel'. Mobile (bp-sm)
+     always falls back to the compact layout. */
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-room {
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+  }
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-room-head {
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-room-name {
+    font-size: 16px;
+  }
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-room-metrics {
+    flex: 1;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    padding: 12px 16px;
+    gap: 10px;
+  }
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-room-metric {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    padding: 10px 14px;
+    border-radius: 11px;
+  }
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-rm-lbl {
+    font-size: 11px;
+  }
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-rm-val {
+    font-size: 30px;
+    font-weight: 300;
+    margin-top: 4px;
+  }
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-rm-val.shd-rm-big {
+    font-size: 38px;
+  }
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-room-sensors {
+    padding: 0 16px 14px;
+    gap: 8px;
+  }
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-r-sensor {
+    font-size: 13px;
+    padding: 7px 13px;
+    border-radius: 9px;
+  }
+  /* Rooms without metrics: keep chips at the bottom with breathing room */
+  .shd-root:not(.shd-bp-sm) .shd-rooms-grid.shd-style-panel .shd-room-head + .shd-room-sensors {
+    padding-top: 14px;
+  }
+
   /* ════════ MODAL OVERLAY ════════ */
   .shd-modal-overlay {
     position: fixed; inset: 0;
@@ -3321,6 +3378,7 @@ class SmartHomeDashboardCard extends HTMLElement {
     // fill the available space. Mobile breakpoints override this in CSS.
     const cols = rooms.length <= 1 ? 1 : rooms.length <= 4 ? 2 : rooms.length <= 6 ? 3 : 4;
     grid.style.setProperty('--shd-rooms-cols', String(cols));
+    grid.classList.toggle('shd-style-panel', this._config.room_card_style === 'panel');
 
     if (countEl) countEl.textContent = rooms.length + (rooms.length === 1 ? ' room' : ' rooms');
 
@@ -4480,6 +4538,23 @@ class SmartHomeDashboardCardEditor extends LitElement {
     `;
   }
 
+  _selectField({ value, label, help, options, onChange }) {
+    return html`
+      <div class="ed-field">
+        ${label ? html`<span class="ed-label">${label}</span>` : ''}
+        <select
+          style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 10px;color:#fff;font-family:inherit;font-size:13px;width:100%;box-sizing:border-box;"
+          @change=${(e) => onChange(e.target.value)}
+        >
+          ${(options || []).map(o => html`
+            <option value=${o.value} ?selected=${(value || '') === o.value} style="background:#1a2342;color:#fff;">${o.label}</option>
+          `)}
+        </select>
+        ${help ? html`<span class="ed-label" style="opacity:0.6;margin-top:3px;">${help}</span>` : ''}
+      </div>
+    `;
+  }
+
   _textField({ value, label, placeholder, onChange, type, style }) {
     return html`
       <div class="ed-field">
@@ -4533,6 +4608,16 @@ class SmartHomeDashboardCardEditor extends LitElement {
         help: 'Locks the Samsung-Premium dark look regardless of HA theme',
         checked: this._config.force_dark !== false,
         onChange: (v) => this._set('force_dark', v),
+      })}
+      ${this._selectField({
+        label: 'Room card style (desktop)',
+        help: 'Panel: header band + large climate values. Mobile always uses Compact.',
+        value: this._config.room_card_style || 'compact',
+        options: [
+          { value: 'compact', label: 'Compact (classic)' },
+          { value: 'panel',   label: 'Panel (large climate focus)' },
+        ],
+        onChange: (v) => this._set('room_card_style', v),
       })}
     `);
   }
