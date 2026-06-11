@@ -1296,12 +1296,18 @@ const CARD_STYLES = `
 
   /* ════════ PHASE 3 — ROOMS GRID + MODALS ════════ */
 
-  /* Rooms grid — adaptive cards */
+  /* Rooms grid — adaptive cards. Column count is set per-floor from JS via
+     --shd-rooms-cols so few rooms get big cards that fill the space. */
+  .shd-rooms-card {
+    display: flex;
+    flex-direction: column;
+  }
   .shd-rooms-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-    grid-auto-rows: min-content;
+    grid-template-columns: repeat(var(--shd-rooms-cols, 4), 1fr);
+    gap: 10px;
+    grid-auto-rows: 1fr;
+    flex: 1;
   }
   .shd-rooms-header {
     display: flex; align-items: center; gap: 7px;
@@ -1339,11 +1345,11 @@ const CARD_STYLES = `
     background: rgba(22,30,58,0.8);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 14px;
-    padding: 10px 9px;
+    padding: 14px 13px;
     cursor: pointer;
     transition: all 0.2s;
     display: flex; flex-direction: column;
-    gap: 5px;
+    gap: 9px;
     position: relative;
     min-width: 0;
   }
@@ -1360,10 +1366,10 @@ const CARD_STYLES = `
     display: flex; align-items: center; gap: 8px;
   }
   .shd-room-icon {
-    font-size: 22px; line-height: 1;
+    font-size: 28px; line-height: 1;
   }
   .shd-room-name {
-    font-size: 12px; font-weight: 700; color: #fff;
+    font-size: 15px; font-weight: 700; color: #fff;
     line-height: 1.2; flex: 1;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
@@ -1375,35 +1381,36 @@ const CARD_STYLES = `
     border-radius: 5px;
   }
   .shd-room-metrics {
-    display: flex; flex-wrap: wrap; gap: 4px;
+    display: flex; flex-wrap: wrap; gap: 6px;
   }
   .shd-room-metric {
-    flex: 1; min-width: 54px;
+    flex: 1; min-width: 70px;
     background: rgba(255,255,255,0.04);
-    border-radius: 7px;
-    padding: 5px 7px;
+    border-radius: 9px;
+    padding: 8px 10px;
   }
   .shd-room-metric.shd-rm-temp  { background: rgba(245,158,11,0.10); border-top: 2px solid #f59e0b; }
   .shd-room-metric.shd-rm-hum   { background: rgba(96,165,250,0.10); border-top: 2px solid #60a5fa; }
   .shd-room-metric.shd-rm-power { background: rgba(245,158,11,0.08); border-top: 2px solid #f59e0b; }
   .shd-rm-lbl {
-    font-size: 8px; color: var(--shd-text-muted);
+    font-size: 10px; color: var(--shd-text-muted);
     text-transform: uppercase; letter-spacing: .05em;
   }
   .shd-rm-val {
-    font-size: 15px; font-weight: 600; color: #fff; line-height: 1;
-    margin-top: 2px;
+    font-size: 19px; font-weight: 600; color: #fff; line-height: 1;
+    margin-top: 3px;
   }
-  .shd-rm-val.shd-rm-big { font-size: 22px; font-weight: 300; }
+  .shd-rm-val.shd-rm-big { font-size: 28px; font-weight: 300; }
   .shd-room-sensors {
-    display: flex; flex-wrap: wrap; gap: 4px;
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: auto;
   }
   .shd-r-sensor {
-    display: flex; align-items: center; gap: 4px;
-    padding: 3px 7px;
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 10px;
     background: rgba(255,255,255,0.04);
-    border-radius: 6px;
-    font-size: 10px;
+    border-radius: 7px;
+    font-size: 12px;
     color: rgba(255,255,255,0.7);
   }
   .shd-r-sensor .shd-rs-dot {
@@ -1757,9 +1764,18 @@ const CARD_STYLES = `
     from { transform: rotate(0deg); } to { transform: rotate(360deg); }
   }
 
-  /* Mobile adjustments for modals + rooms */
-  .shd-root.shd-bp-sm .shd-rooms-grid { grid-template-columns: repeat(3, 1fr); }
+  /* Mobile adjustments for modals + rooms — fixed columns, compact cards */
+  .shd-root.shd-bp-sm .shd-rooms-grid { grid-template-columns: repeat(3, 1fr); grid-auto-rows: min-content; gap: 6px; }
   .shd-root.shd-bp-xs .shd-rooms-grid { grid-template-columns: repeat(2, 1fr); }
+  .shd-root.shd-bp-sm .shd-room { padding: 10px 9px; gap: 5px; }
+  .shd-root.shd-bp-sm .shd-room-icon { font-size: 22px; }
+  .shd-root.shd-bp-sm .shd-room-name { font-size: 12px; }
+  .shd-root.shd-bp-sm .shd-room-metric { min-width: 54px; padding: 5px 7px; }
+  .shd-root.shd-bp-sm .shd-rm-lbl { font-size: 8px; }
+  .shd-root.shd-bp-sm .shd-rm-val { font-size: 15px; }
+  .shd-root.shd-bp-sm .shd-rm-val.shd-rm-big { font-size: 22px; }
+  .shd-root.shd-bp-sm .shd-room-sensors { margin-top: 0; gap: 4px; }
+  .shd-root.shd-bp-sm .shd-r-sensor { font-size: 10px; padding: 3px 7px; }
   .shd-root.shd-bp-xs .shd-modal { padding: 16px; max-height: 95vh; }
   .shd-root.shd-bp-xs .shd-garage-grid { grid-template-columns: 1fr; }
   .shd-root.shd-bp-xs .shd-garage-ctrls { flex-direction: row; }
@@ -2270,7 +2286,7 @@ class SmartHomeDashboardCard extends HTMLElement {
 
         <!-- CENTER COLUMN: rooms grid -->
         <div class="shd-col">
-          <div class="shd-card" style="flex:1;">
+          <div class="shd-card shd-rooms-card" style="flex:1;">
             <div class="shd-rooms-header">
               <div class="shd-section-dot" style="background:var(--shd-accent-gold);"></div>
               <span>Rooms — </span><span class="shd-rh-floor">${this._esc(floorLabel)}</span>
@@ -3300,6 +3316,11 @@ class SmartHomeDashboardCard extends HTMLElement {
     }
 
     const rooms = (currentFloor.rooms || []).filter(r => this._roomMatchesLabels(r));
+
+    // Balance the grid: fewer rooms → fewer columns → bigger cards that
+    // fill the available space. Mobile breakpoints override this in CSS.
+    const cols = rooms.length <= 1 ? 1 : rooms.length <= 4 ? 2 : rooms.length <= 6 ? 3 : 4;
+    grid.style.setProperty('--shd-rooms-cols', String(cols));
 
     if (countEl) countEl.textContent = rooms.length + (rooms.length === 1 ? ' room' : ' rooms');
 
