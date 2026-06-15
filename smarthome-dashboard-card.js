@@ -2402,6 +2402,7 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _renderWeatherCard() {
+    if (this._config.show_weather === false) return '';
     const w = this._config.header && this._config.header.weather_entity;
     return `
       <div class="shd-card">
@@ -2433,6 +2434,7 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _renderMembersCard() {
+    if (this._config.show_members === false) return '';
     const members = Array.isArray(this._config.members) ? this._config.members : [];
     // Defensive: editor might've nested as { members: { members: [...] } }
     const list = (members.members && Array.isArray(members.members)) ? members.members : members;
@@ -2473,6 +2475,7 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _renderGarageCard() {
+    if (this._config.show_garage === false) return '';
     const cover = this._config.garage && this._config.garage.cover;
     const contact = this._config.garage && this._config.garage.contact;
     if (!cover && !contact) {
@@ -2508,6 +2511,7 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _renderSaltCard() {
+    if (this._config.show_salt === false) return '';
     const cfg = this._config.salt || {};
     const sensor = cfg.sensor;
     const name = cfg.name || 'Salt Level';
@@ -2604,6 +2608,7 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _renderMowerCard() {
+    if (this._config.show_mower === false) return '';
     const eid = this._config.mower && this._config.mower.entity;
     if (!eid) {
       return `
@@ -2645,6 +2650,7 @@ class SmartHomeDashboardCard extends HTMLElement {
   }
 
   _renderPowerCard() {
+    if (this._config.show_power === false) return '';
     const p = this._config.power || {};
     if (!p.power_sensor && !p.energy_sensor) {
       return `
@@ -4619,6 +4625,17 @@ class SmartHomeDashboardCardEditor extends LitElement {
         ],
         onChange: (v) => this._set('room_card_style', v),
       })}
+
+      <div style="font-size:11px;font-weight:600;color:var(--secondary-text-color,rgba(255,255,255,0.5));margin:14px 0 6px;text-transform:uppercase;letter-spacing:0.05em;">
+        Visible widgets
+      </div>
+      ${this._toggle({ label: 'Clock & Sun',         checked: !(this._config.header && this._config.header.show_clock === false), onChange: (v) => this._setDeep(['header','show_clock'], v) })}
+      ${this._toggle({ label: 'Weather',             checked: this._config.show_weather !== false,  onChange: (v) => this._set('show_weather', v) })}
+      ${this._toggle({ label: 'Household Members',   checked: this._config.show_members !== false,  onChange: (v) => this._set('show_members', v) })}
+      ${this._toggle({ label: 'Garage Door',         checked: this._config.show_garage  !== false,  onChange: (v) => this._set('show_garage',  v) })}
+      ${this._toggle({ label: 'Salt Level',          checked: this._config.show_salt    !== false,  onChange: (v) => this._set('show_salt',    v) })}
+      ${this._toggle({ label: 'Automower',           checked: this._config.show_mower   !== false,  onChange: (v) => this._set('show_mower',   v) })}
+      ${this._toggle({ label: 'Power / Energy',      checked: this._config.show_power   !== false,  onChange: (v) => this._set('show_power',   v) })}
     `);
   }
 
