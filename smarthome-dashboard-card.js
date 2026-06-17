@@ -20,7 +20,7 @@
  * License:  MIT
  */
 
-const CARD_VERSION = '0.4.7';
+const CARD_VERSION = '0.4.8';
 
 /* ════════════════════════════════════════════════════════════════════
    LITELEMENT — sourced from Home Assistant's bundled instance
@@ -1912,6 +1912,15 @@ const CARD_STYLES = `
   .shd-root.shd-bp-xs .shd-album-art { width: 130px; height: 130px; }
   .shd-root.shd-bp-xs .shd-power-value { font-size: 30px; }
   .shd-root.shd-bp-xs .shd-weather-temp { font-size: 38px; }
+
+  /* ── Just HA Dashboard design adoption ──────────────────────────────────
+     Outer shell only; internal --shd-* design system is untouched. Gated on
+     --user-* tokens (defined only by the Just HA theme), so the card is
+     unchanged on every other dashboard/theme via the fallbacks. */
+  .shd-root {
+    background: var(--user-glow-amber, transparent), var(--user-ink-750, var(--shd-bg-deep)) !important;
+    border-radius: var(--user-radius-xl, 24px) !important;
+  }
 `;
 
 /* ════════════════════════════════════════════════════════════════════
