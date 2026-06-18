@@ -1917,9 +1917,9 @@ const CARD_STYLES = `
      Outer shell only; internal --shd-* design system is untouched. Gated on
      --user-* tokens (defined only by the Just HA theme), so the card is
      unchanged on every other dashboard/theme via the fallbacks. */
-  .shd-root {
-    background: var(--user-glow-amber, transparent), var(--user-ink-750, var(--shd-bg-deep)) !important;
-    border-radius: var(--user-radius-xl, 24px) !important;
+  .shd-root.shd-jha {
+    background: var(--user-glow-amber, radial-gradient(120% 130% at 50% -10%, rgba(224,162,78,.30) 0%, rgba(160,104,43,.10) 38%, rgba(20,20,23,0) 72%)), var(--user-ink-750, #141417) !important;
+    border-radius: var(--user-radius-xl, 26px) !important;
   }
 `;
 
@@ -2034,7 +2034,7 @@ class SmartHomeDashboardCard extends HTMLElement {
       const cfg = this._config;
       this.shadowRoot.innerHTML = `
         <style>${CARD_STYLES}</style>
-        <div class="shd-root">
+        <div class="shd-root${this._config.jha ? ' shd-jha' : ''}">
           ${this._configError ? `
             <div style="padding:24px;color:#ef4444;font-family:monospace;font-size:13px;background:#1a0505;border:1px solid #ef4444;border-radius:12px;margin:12px;">
               <strong>⚠ Smart Home Dashboard Card — Config Error</strong><br><br>
@@ -4623,6 +4623,12 @@ class SmartHomeDashboardCardEditor extends LitElement {
         help: 'Locks the Samsung-Premium dark look regardless of HA theme',
         checked: this._config.force_dark !== false,
         onChange: (v) => this._set('force_dark', v),
+      })}
+      ${this._toggle({
+        label: '✨ Just HA Design',
+        help: 'Warm-amber Just HA Dashboard look on the outer shell (uses the Just HA theme tokens when present, e.g. on Heimdall)',
+        checked: !!this._config.jha,
+        onChange: (v) => this._set('jha', v),
       })}
       ${this._selectField({
         label: 'Room card style (desktop)',
